@@ -49,61 +49,24 @@ import numpy as np
 import sys
 import re
 
-# Set visualization style
-plt.style.use('default')
-sns.set_palette("husl")
+# Import configuration
+# Import configuration
+from config.constants import VEP_CONSEQUENCE_IMPACT
+from config.scoring_config import (
+    IMPACT_TRANSITION_SCORES,
+    CLINICAL_OVERRIDE,
+    BASE_SCORES,
+    PRIORITY_CATEGORIES
+)
+from config.vizualisation_config import (
+    PLOT_COLORS,
+    PLOT_STYLE_CONFIG,
+    FIGURE_CONFIG
+)
 
-# VEP consequence severity mapping based on official Ensembl hierarchy
-VEP_CONSEQUENCE_IMPACT = {
-    # HIGH IMPACT
-    'transcript_ablation': 'HIGH',
-    'splice_acceptor_variant': 'HIGH',
-    'splice_donor_variant': 'HIGH',
-    'stop_gained': 'HIGH',
-    'frameshift_variant': 'HIGH',
-    'stop_lost': 'HIGH',
-    'start_lost': 'HIGH',
-    'transcript_amplification': 'HIGH',
-    'feature_elongation': 'HIGH',
-    'feature_truncation': 'HIGH',
-    
-    # MODERATE IMPACT
-    'inframe_insertion': 'MODERATE',
-    'inframe_deletion': 'MODERATE',
-    'missense_variant': 'MODERATE',
-    'protein_altering_variant': 'MODERATE',
-    
-    # LOW IMPACT
-    'splice_donor_5th_base_variant': 'LOW',
-    'splice_region_variant': 'LOW',
-    'splice_donor_region_variant': 'LOW',
-    'splice_polypyrimidine_tract_variant': 'LOW',
-    'incomplete_terminal_codon_variant': 'LOW',
-    'start_retained_variant': 'LOW',
-    'stop_retained_variant': 'LOW',
-    'synonymous_variant': 'LOW',
-    
-    # MODIFIER IMPACT
-    'coding_sequence_variant': 'MODIFIER',
-    'mature_miRNA_variant': 'MODIFIER',
-    '5_prime_UTR_variant': 'MODIFIER',
-    '3_prime_UTR_variant': 'MODIFIER',
-    'non_coding_transcript_exon_variant': 'MODIFIER',
-    'intron_variant': 'MODIFIER',
-    'NMD_transcript_variant': 'MODIFIER',
-    'non_coding_transcript_variant': 'MODIFIER',
-    'coding_transcript_variant': 'MODIFIER',
-    'upstream_gene_variant': 'MODIFIER',
-    'downstream_gene_variant': 'MODIFIER',
-    'TFBS_ablation': 'MODIFIER',
-    'TFBS_amplification': 'MODIFIER',
-    'TF_binding_site_variant': 'MODIFIER',
-    'regulatory_region_ablation': 'MODIFIER',
-    'regulatory_region_amplification': 'MODIFIER',
-    'regulatory_region_variant': 'MODIFIER',
-    'intergenic_variant': 'MODIFIER',
-    'sequence_variant': 'MODIFIER'
-}
+# Set visualization style from config
+plt.style.use(PLOT_STYLE_CONFIG['style'])
+sns.set_palette(PLOT_STYLE_CONFIG['seaborn_palette'])
 
 def get_impact_numeric_value(impact):
     """Convert impact to numeric value for magnitude calculation"""
@@ -612,24 +575,24 @@ def calculate_scores_from_vep_analysis(vep_analysis_df):
     for _, row in vep_analysis_df.iterrows():
         # Calculate base priority score
         priority_score = 0
-        
+
         # Position and genotype discordance scoring
         if row['pos_match'] == 0:
-            priority_score += 3
+            priority_score += BASE_SCORES['position_mismatch']
         if row['pos_difference'] > 10:
-            priority_score += 2
+            priority_score += BASE_SCORES['position_difference_moderate']
         if row['pos_difference'] > 100:
-            priority_score += 3
+            priority_score += BASE_SCORES['position_difference_large']
         if row['gt_match'] == 0:
-            priority_score += 3
+            priority_score += BASE_SCORES['genotype_mismatch']
         
         # BCFtools liftover swap values: 1 = swapped, -1 = swap failed, NA = no swap needed
         swap_str = str(row['swap']) if pd.notna(row['swap']) else 'NA'
         if swap_str == '1':  # REF/ALT alleles were swapped during liftover
-            priority_score += 2
+            priority_score += BASE_SCORES['ref_alt_swap']
         
         # Core functional changes (highest priority)
-        priority_score += row['same_transcript_consequence_changes'] * 10  # CRITICAL
+        priority_score += row['same_transcript_consequence_changes'] * BASE_SCORES['same_transcript_consequence_changes']  # CRITICAL
         
         # MAGNITUDE-BASED IMPACT SCORING (NEW)
         hg19_impact = row['hg19_impact']
@@ -637,72 +600,80 @@ def calculate_scores_from_vep_analysis(vep_analysis_df):
         impact_magnitude, is_clinically_significant = calculate_impact_transition_magnitude(hg19_impact, hg38_impact)
         
         if row['impact_changes'] > 0 and is_clinically_significant:
-            # Clinically significant impact transitions
-            if impact_magnitude == 1:
-                if 'HIGH' in [hg19_impact, hg38_impact] and 'MODERATE' in [hg19_impact, hg38_impact]:
-                    priority_score += 10  # HIGH ↔ MODERATE
-                elif 'MODERATE' in [hg19_impact, hg38_impact] and 'LOW' in [hg19_impact, hg38_impact]:
-                    priority_score += 8   # MODERATE ↔ LOW
-            elif impact_magnitude == 2:
-                if 'HIGH' in [hg19_impact, hg38_impact]:
-                    priority_score += 12  # HIGH ↔ LOW
-                elif 'MODERATE' in [hg19_impact, hg38_impact]:
-                    priority_score += 10  # MODERATE ↔ MODIFIER
-            elif impact_magnitude == 3:
-                priority_score += 15      # HIGH ↔ MODIFIER (most significant)
+            # Clinically significant impact transitions  
+            transition_key = tuple(sorted([hg19_impact, hg38_impact]))
+            if transition_key in IMPACT_TRANSITION_SCORES:
+                priority_score += IMPACT_TRANSITION_SCORES[transition_key]
+            else:
+                # Fallback for unexpected transitions
+                if impact_magnitude == 1:
+                    if 'HIGH' in [hg19_impact, hg38_impact] and 'MODERATE' in [hg19_impact, hg38_impact]:
+                        priority_score += IMPACT_TRANSITION_SCORES[('HIGH', 'MODERATE')]
+                    elif 'MODERATE' in [hg19_impact, hg38_impact] and 'LOW' in [hg19_impact, hg38_impact]:
+                        priority_score += IMPACT_TRANSITION_SCORES[('MODERATE', 'LOW')]
+                elif impact_magnitude == 2:
+                    if 'HIGH' in [hg19_impact, hg38_impact]:
+                        priority_score += IMPACT_TRANSITION_SCORES[('HIGH', 'LOW')]
+                    elif 'MODERATE' in [hg19_impact, hg38_impact]:
+                        priority_score += IMPACT_TRANSITION_SCORES[('MODERATE', 'MODIFIER')]
+                elif impact_magnitude == 3:
+                    priority_score += IMPACT_TRANSITION_SCORES[('HIGH', 'MODIFIER')]
         elif row['impact_changes'] > 0:
             # Non-clinically significant transitions (annotation noise)
-            priority_score += 1           # LOW ↔ MODIFIER (minimal weight)
+            priority_score += IMPACT_TRANSITION_SCORES[('LOW', 'MODIFIER')]
         
-        priority_score += row['unmatched_consequences'] * 4               # INVESTIGATE
-        
+        priority_score += row['unmatched_consequences'] * BASE_SCORES['unmatched_consequences']     # INVESTIGATE
+
+
         # Clinical significance changes
         if row['clin_sig_change'] == 'BENIGN_TO_PATHOGENIC':
-            priority_score += 10
+            priority_score += BASE_SCORES['clinical_sig_benign_to_pathogenic']
         elif row['clin_sig_change'] == 'PATHOGENIC_TO_BENIGN':
-            priority_score += 8
+            priority_score += BASE_SCORES['clinical_sig_pathogenic_to_benign']
         elif row['clin_sig_change'] == 'OTHER_CHANGE':
-            priority_score += 5
+            priority_score += BASE_SCORES['clinical_sig_other_change']
         
         # Pathogenicity prediction changes
         if row['sift_change']:
-            priority_score += 5
+            priority_score += BASE_SCORES['sift_change']
         if row['polyphen_change']:
-            priority_score += 5
+            priority_score += BASE_SCORES['polyphen_change']
         
         # Gene changes - CONDITIONAL on clinical significance (NEW LOGIC)
         if row['gene_changes'] > 0:
             if is_clinically_significant or row['clin_sig_change'] or row['sift_change'] or row['polyphen_change']:
+
                 # Gene change is clinically relevant - use impact-based scoring
                 if hg19_impact == 'HIGH' or hg38_impact == 'HIGH':
-                    priority_score += row['gene_changes'] * 8
+                    priority_score += row['gene_changes'] * BASE_SCORES['gene_changes_high_impact']
                 elif hg19_impact == 'MODERATE' or hg38_impact == 'MODERATE':
-                    priority_score += row['gene_changes'] * 4
+                    priority_score += row['gene_changes'] * BASE_SCORES['gene_changes_moderate_impact']
                 elif hg19_impact == 'LOW' or hg38_impact == 'LOW':
-                    priority_score += row['gene_changes'] * 2
+                    priority_score += row['gene_changes'] * BASE_SCORES['gene_changes_low_impact']
                 else:
-                    priority_score += row['gene_changes'] * 3  # Mixed or unknown
+                    priority_score += row['gene_changes'] * BASE_SCORES['gene_changes_mixed_impact']  # Mixed or unknown
             else:
                 # Gene change likely annotation synonym - minimal weight
-                priority_score += row['gene_changes'] * 0.1
+                priority_score += row['gene_changes'] * BASE_SCORES['gene_changes_minimal_weight']
         
         # Other transcript-level issues
-        priority_score += row['same_consequence_different_transcripts'] * 3  # Moderate priority
-        
+        priority_score += row['same_consequence_different_transcripts'] * BASE_SCORES['same_consequence_different_transcripts']  # Moderate priority
+
         # Clinical significance bonus (if any clinical data available)
         has_clinical_data = (
             not pd.isna(row['hg19_clin_sig']) and row['hg19_clin_sig'] not in ['', '-'] or
             not pd.isna(row['hg38_clin_sig']) and row['hg38_clin_sig'] not in ['', '-']
         )
         if has_clinical_data:
-            priority_score += 2
+            priority_score += BASE_SCORES['has_clinical_data_bonus']
         
         # Mapping status and impact adjustments
         if row['mapping_status'] == 'REGION':
-            priority_score += 1
+            priority_score += BASE_SCORES['region_mapping_bonus']
         
         if row['hg19_impact'] == 'HIGH' or row['hg38_impact'] == 'HIGH':
-            priority_score += 2
+            priority_score += BASE_SCORES['high_impact_bonus']
+    
         
         # CLINICAL EVIDENCE OVERRIDE
         # Check if variant is benign based on multiple evidence sources
@@ -730,12 +701,12 @@ def calculate_scores_from_vep_analysis(vep_analysis_df):
             'probably_damaging' in str(row['hg19_polyphen']).lower() or
             'probably_damaging' in str(row['hg38_polyphen']).lower()
         )
-        
+
         # Apply clinical evidence override
         if is_benign_variant:
-            priority_score *= 0.1  # 90% reduction for benign variants
+            priority_score *= CLINICAL_OVERRIDE['benign_reduction_factor']  # 90% reduction for benign variants
         elif has_pathogenic_evidence:
-            priority_score *= 2.0  # 2x boost for pathogenic variants
+            priority_score *= CLINICAL_OVERRIDE['pathogenic_boost_factor']  # 2x boost for pathogenic variants
         
         # Determine priority category with updated logic
         if row['same_transcript_consequence_changes'] > 0:
@@ -795,12 +766,17 @@ def create_prioritization_plots(df, conn, output_dir):
     """Create enhanced visualization plots for variant prioritization analysis"""
     print("Creating enhanced prioritization visualizations...")
 
-    # Define consistent colorblind-friendly palette
-    colors_priority = ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4', '#9467bd']
-    colors_clinical = ['#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf', '#ff7f0e', '#2ca02c']
+    # Use colors from config
+    colors_priority = PLOT_COLORS['priority']
+    colors_clinical = PLOT_COLORS['clinical']
 
     # Create enhanced visualization with 4 plots
-    fig, axes = plt.subplots(2, 2, figsize=(20, 12))
+    fig, axes = plt.subplots(
+        FIGURE_CONFIG['main_figure']['rows'], 
+        FIGURE_CONFIG['main_figure']['cols'], 
+        figsize=FIGURE_CONFIG['main_figure']['figsize']
+    )
+
     fig.suptitle('Enhanced Variant Prioritization Analysis', fontsize=16, fontweight='bold')
 
     # PLOT 1: Priority categories bar chart (keep as is)
