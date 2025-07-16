@@ -57,7 +57,7 @@ from config.scoring_config import (
     BASE_SCORES,
     PRIORITY_CATEGORIES
 )
-from config.vizualisation_config import (
+from config.visualization_config import (
     PLOT_COLORS,
     PLOT_STYLE_CONFIG,
     FIGURE_CONFIG
@@ -79,6 +79,9 @@ from utils.impact_utils import (
     calculate_impact_transition_magnitude
 )
 from utils.data_utils import safe_int_convert
+
+# Import visualization
+from visualization.plot_generator import PrioritizationPlotter
 
 # Set visualization style from config
 plt.style.use(PLOT_STYLE_CONFIG['style'])
@@ -672,8 +675,6 @@ def calculate_scores_from_vep_analysis(vep_analysis_df):
         scored_variants.append(variant_info)
     
     return pd.DataFrame(scored_variants)
-
-def create_prioritization_plots(df, conn, output_dir):
     """Create enhanced visualization plots for variant prioritization analysis"""
     print("Creating enhanced prioritization visualizations...")
 
@@ -1323,9 +1324,11 @@ CLINICAL EVIDENCE-DRIVEN SCORING:
         
         print(f"\nSelected {len(df_excel):,} variants for Excel output (score >= {args.min_score}, max {args.max_variants:,})")
         
+        
         # Create prioritization plots using FULL dataset
         if create_plots:
-            create_prioritization_plots(df_full, conn, output_dir)
+            plotter = PrioritizationPlotter(PLOT_COLORS, FIGURE_CONFIG)
+            plotter.create_all_plots(df_full, conn, output_dir)
         
         # Format EXCEL subset for Excel
         output_df = format_for_excel(df_excel)
