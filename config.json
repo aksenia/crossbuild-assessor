@@ -1,0 +1,13 @@
+{
+  "input_files": {
+    "comparison": "/mnt/data/compare_liftover.txt",
+    "hg19_vep": "/mnt/data/hg19.vep.txt", 
+    "hg38_vep": "/mnt/data/hg38.vep.txt"
+  },
+  "database": {
+    "path": "/mnt/data/genomic_analysis.db"
+  },
+  "output": {
+    "directory": "/mnt/output"
+  }
+}
