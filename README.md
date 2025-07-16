@@ -16,6 +16,14 @@ CrossBuild Assessor analyzes how genomic variants behave when lifted between ref
 
 ---
 
+## Build 
+
+```
+docker build -t crossbuild-assessor .
+
+```
+
+
 ## Key Features
 
 ### 🔍 **Liftover Quality Control**
