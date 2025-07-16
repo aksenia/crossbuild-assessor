@@ -50,7 +50,6 @@ import sys
 import re
 
 # Import configuration
-# Import configuration
 from config.constants import VEP_CONSEQUENCE_IMPACT
 from config.scoring_config import (
     IMPACT_TRANSITION_SCORES,
@@ -64,28 +63,26 @@ from config.vizualisation_config import (
     FIGURE_CONFIG
 )
 
+# Import utilities  
+from utils.clinical_utils import (
+    is_pathogenic_clinical_significance,
+    is_benign_clinical_significance,
+    parse_sift_prediction,
+    parse_polyphen_prediction
+)
+from utils.transcript_utils import (
+    normalize_transcript_id,
+    extract_genotype_from_alleles
+)
+from utils.impact_utils import (
+    get_impact_numeric_value,
+    calculate_impact_transition_magnitude
+)
+from utils.data_utils import safe_int_convert
+
 # Set visualization style from config
 plt.style.use(PLOT_STYLE_CONFIG['style'])
 sns.set_palette(PLOT_STYLE_CONFIG['seaborn_palette'])
-
-def get_impact_numeric_value(impact):
-    """Convert impact to numeric value for magnitude calculation"""
-    impact_values = {'HIGH': 4, 'MODERATE': 3, 'LOW': 2, 'MODIFIER': 1}
-    return impact_values.get(impact, 0)
-
-def calculate_impact_transition_magnitude(hg19_impact, hg38_impact):
-    """Calculate magnitude of impact transition for clinical significance"""
-    hg19_val = get_impact_numeric_value(hg19_impact)
-    hg38_val = get_impact_numeric_value(hg38_impact)
-    magnitude = abs(hg19_val - hg38_val)
-    
-    # Check if transition involves MODERATE or HIGH (clinically significant)
-    involves_moderate_or_high = (
-        hg19_impact in ['MODERATE', 'HIGH'] or 
-        hg38_impact in ['MODERATE', 'HIGH']
-    )
-    
-    return magnitude, involves_moderate_or_high
 
 def connect_database(db_path):
     """Connect to SQLite database and verify structure"""
@@ -106,86 +103,6 @@ def connect_database(db_path):
     
     return conn
 
-def extract_genotype_from_alleles(source_alleles):
-    """Extract reference and alternative alleles from source_alleles string"""
-    if pd.isna(source_alleles) or source_alleles == '':
-        return '', ''
-    
-    # Handle various formats: "A/G", "A,G", "-/G", etc.
-    if '/' in source_alleles:
-        parts = source_alleles.split('/')
-    elif ',' in source_alleles:
-        parts = source_alleles.split(',')
-    else:
-        return source_alleles, ''
-    
-    if len(parts) >= 2:
-        return parts[0].strip(), parts[1].strip()
-    else:
-        return parts[0].strip(), ''
-
-def is_pathogenic_clinical_significance(clin_sig):
-    """Check if clinical significance indicates pathogenic variant"""
-    if pd.isna(clin_sig) or clin_sig in ['', '-', 'nan']:
-        return False
-    
-    clin_sig_lower = str(clin_sig).lower()
-    pathogenic_terms = ['pathogenic', 'likely_pathogenic', 'drug_response']
-    return any(term in clin_sig_lower for term in pathogenic_terms)
-
-def is_benign_clinical_significance(clin_sig):
-    """Check if clinical significance indicates benign variant"""
-    if pd.isna(clin_sig) or clin_sig in ['', '-', 'nan']:
-        return False
-    
-    clin_sig_lower = str(clin_sig).lower()
-    benign_terms = ['benign', 'likely_benign']
-    return any(term in clin_sig_lower for term in benign_terms)
-
-def parse_sift_prediction(sift_str):
-    """Parse SIFT prediction and score"""
-    if pd.isna(sift_str) or sift_str in ['', '-', 'nan']:
-        return None, None
-    
-    sift_str = str(sift_str).lower()
-    
-    # Extract prediction
-    if 'deleterious' in sift_str:
-        prediction = 'deleterious'
-    elif 'tolerated' in sift_str:
-        prediction = 'tolerated'
-    else:
-        prediction = None
-    
-    # Extract score (numbers in parentheses)
-    score_match = re.search(r'\(([0-9.]+)\)', sift_str)
-    score = float(score_match.group(1)) if score_match else None
-    
-    return prediction, score
-
-def parse_polyphen_prediction(polyphen_str):
-    """Parse PolyPhen prediction and score"""
-    if pd.isna(polyphen_str) or polyphen_str in ['', '-', 'nan']:
-        return None, None
-    
-    polyphen_str = str(polyphen_str).lower()
-    
-    # Extract prediction
-    if 'probably_damaging' in polyphen_str:
-        prediction = 'probably_damaging'
-    elif 'possibly_damaging' in polyphen_str:
-        prediction = 'possibly_damaging'
-    elif 'benign' in polyphen_str:
-        prediction = 'benign'
-    else:
-        prediction = None
-    
-    # Extract score (numbers in parentheses)
-    score_match = re.search(r'\(([0-9.]+)\)', polyphen_str)
-    score = float(score_match.group(1)) if score_match else None
-    
-    return prediction, score
-
 def calculate_variant_scores(conn, cache_file=None, force_recalculate=False):
     """Calculate priority scores using clinical evidence-driven analysis with memory optimization and caching"""
     print("Calculating variant priority scores with clinical evidence-driven analysis...")
@@ -204,13 +121,7 @@ def calculate_variant_scores(conn, cache_file=None, force_recalculate=False):
             print(f"Warning: Could not load cache file ({e}), recalculating...")
     
     print("Calculating fresh VEP analysis...")
-    
-    def normalize_transcript_id(transcript_id):
-        """Strip version numbers for transcript matching (ENST123.4 → ENST123)"""
-        if pd.isna(transcript_id) or transcript_id == '' or transcript_id == '-':
-            return None
-        return str(transcript_id).split('.')[0]
-    
+        
     # STEP 1: Get all unique variants (both concordant and discordant) - MEMORY EFFICIENT
     print("Step 1: Identifying all variants for VEP analysis...")
     variant_query = """
@@ -1084,11 +995,6 @@ def format_for_excel(df):
     output_df['GT_hg19'] = genotype_data['hg19_ref'] + '/' + genotype_data['hg19_alt']
     output_df['GT_hg38'] = genotype_data['hg38_ref'] + '/' + genotype_data['hg38_alt']
     output_df['Mapping_Status'] = df['mapping_status']
-    
-    # Liftover information - Convert floats to integers properly
-    def safe_int_convert(series):
-        """Convert float to int, handling NaN values"""
-        return series.apply(lambda x: int(x) if pd.notna(x) and x != '' else '')
     
     output_df['Position_hg38_CrossMap'] = safe_int_convert(df['liftover_hg38_pos'])
     output_df['Position_hg38_bcftools'] = safe_int_convert(df['bcftools_hg38_pos'])
