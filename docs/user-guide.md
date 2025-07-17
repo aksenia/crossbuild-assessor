@@ -180,26 +180,6 @@ for config in configs/*.json; do
 done
 ```
 
-## Troubleshooting
-
-### Common issues
-
-**Import errors**
-- Ensure all config files are in the correct directory structure
-- Check that file paths in config.json are absolute paths
-
-**Memory issues**  
-- Reduce chunk size in analysis settings
-- Process smaller datasets or use a machine with more RAM
-
-**Missing VEP data**
-- Verify VEP files have the required columns
-- Check that coordinate systems match between comparison and VEP files
-
-**No results**
-- Ensure input files have overlapping variants
-- Check that bcftools coordinates are not NULL in comparison file
-
 ### Performance tips
 
 - Use `--force` flag only when needed (ignores cache)
