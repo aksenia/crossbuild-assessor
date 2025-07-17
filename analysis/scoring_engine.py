@@ -1,8 +1,10 @@
 """
 Clinical Scoring Engine
 
-Calculates priority scores from VEP analysis data using clinical evidence-driven
-scoring with magnitude-based impact transitions and clinical overrides.
+Calculates priority scores with clinical evidence-first approach:
+- Clinical significance changes get highest priority
+- Impact transitions are functionally significant  
+- VEP consequence mismatches get reduced weight (annotation noise)
 """
 
 import pandas as pd
@@ -15,17 +17,17 @@ from utils.impact_utils import calculate_impact_transition_magnitude
 
 
 class ClinicalScorer:
-    """Calculate clinical priority scores from VEP analysis data"""
+    """Calculate clinical priority scores with clinical evidence-first approach"""
     
     def __init__(self):
-        """Initialize clinical scorer with configuration"""
+        """Initialize clinical scorer with updated configuration"""
         self.impact_transition_scores = IMPACT_TRANSITION_SCORES
         self.clinical_override = CLINICAL_OVERRIDE
         self.base_scores = BASE_SCORES
     
     def calculate_scores_from_analysis(self, vep_analysis_df):
-        """Calculate priority scores from cached VEP analysis data with magnitude-based impact scoring"""
-        print("Calculating priority scores with magnitude-based impact transitions...")
+        """Calculate priority scores with REDESIGNED clinical evidence-first approach"""
+        print("Calculating priority scores with REDESIGNED clinical evidence-first approach...")
         
         scored_variants = []
         
@@ -33,25 +35,19 @@ class ClinicalScorer:
             # Calculate base priority score
             priority_score = 0
             
-            # Position and genotype discordance scoring
-            if row['pos_match'] == 0:
-                priority_score += self.base_scores['position_mismatch']
-            if row['pos_difference'] > 10:
-                priority_score += self.base_scores['position_difference_moderate']
-            if row['pos_difference'] > 100:
-                priority_score += self.base_scores['position_difference_large']
-            if row['gt_match'] == 0:
-                priority_score += self.base_scores['genotype_mismatch']
+            # CRITICAL: Clinical significance changes (highest priority)
+            clin_change = row['clin_sig_change']
+            if clin_change == 'BENIGN_TO_PATHOGENIC':
+                priority_score += self.base_scores['clinical_sig_benign_to_pathogenic']
+            elif clin_change == 'PATHOGENIC_TO_BENIGN':
+                priority_score += self.base_scores['clinical_sig_pathogenic_to_benign']
+            elif clin_change.startswith('VUS_TO_PATHOGENIC'):
+                priority_score += self.base_scores['clinical_sig_vus_to_pathogenic']
+            elif 'TO' in str(clin_change) and not clin_change.startswith('STABLE_'):
+                # Any other directional clinical change
+                priority_score += self.base_scores['clinical_sig_other_change']
             
-            # BCFtools liftover swap values: 1 = swapped, -1 = swap failed, NA = no swap needed
-            swap_str = str(row['swap']) if pd.notna(row['swap']) else 'NA'
-            if swap_str == '1':  # REF/ALT alleles were swapped during liftover
-                priority_score += self.base_scores['ref_alt_swap']
-            
-            # Core functional changes (highest priority)
-            priority_score += row['same_transcript_consequence_changes'] * self.base_scores['same_transcript_consequence_changes']  # CRITICAL
-            
-            # MAGNITUDE-BASED IMPACT SCORING
+            # CRITICAL: High impact transitions (functionally significant)
             hg19_impact = row['hg19_impact']
             hg38_impact = row['hg38_impact']
             impact_magnitude, is_clinically_significant = calculate_impact_transition_magnitude(hg19_impact, hg38_impact)
@@ -63,40 +59,21 @@ class ClinicalScorer:
                     priority_score += self.impact_transition_scores[transition_key]
                 else:
                     # Fallback for unexpected transitions
-                    if impact_magnitude == 1:
-                        if 'HIGH' in [hg19_impact, hg38_impact] and 'MODERATE' in [hg19_impact, hg38_impact]:
-                            priority_score += self.impact_transition_scores[('HIGH', 'MODERATE')]
-                        elif 'MODERATE' in [hg19_impact, hg38_impact] and 'LOW' in [hg19_impact, hg38_impact]:
-                            priority_score += self.impact_transition_scores[('MODERATE', 'LOW')]
-                    elif impact_magnitude == 2:
-                        if 'HIGH' in [hg19_impact, hg38_impact]:
-                            priority_score += self.impact_transition_scores[('HIGH', 'LOW')]
-                        elif 'MODERATE' in [hg19_impact, hg38_impact]:
-                            priority_score += self.impact_transition_scores[('MODERATE', 'MODIFIER')]
-                    elif impact_magnitude == 3:
-                        priority_score += self.impact_transition_scores[('HIGH', 'MODIFIER')]
-            elif row['impact_changes'] > 0:
-                # Non-clinically significant transitions (annotation noise)
-                priority_score += self.impact_transition_scores[('LOW', 'MODIFIER')]
+                    if impact_magnitude >= 2:  # HIGH to LOW/MODIFIER or similar
+                        priority_score += 15
+                    elif impact_magnitude == 1 and ('HIGH' in [hg19_impact, hg38_impact] or 'MODERATE' in [hg19_impact, hg38_impact]):
+                        priority_score += 10
             
-            priority_score += row['unmatched_consequences'] * self.base_scores['unmatched_consequences']               # INVESTIGATE
-
-            # Clinical significance changes (using normalized directional changes)
-            if row['clin_sig_change'] == 'BENIGN_TO_PATHOGENIC':
-                priority_score += self.base_scores['clinical_sig_benign_to_pathogenic']
-            elif row['clin_sig_change'] == 'PATHOGENIC_TO_BENIGN':
-                priority_score += self.base_scores['clinical_sig_pathogenic_to_benign']
-            elif 'TO' in str(row['clin_sig_change']) and not row['clin_sig_change'].startswith('STABLE_'):
-                # Any other directional change (VUS_TO_PATHOGENIC, etc.)
-                priority_score += self.base_scores['clinical_sig_other_change']
+            # HIGH: Functionally significant changes (demoted from CRITICAL)
+            priority_score += row['same_transcript_consequence_changes'] * self.base_scores['same_transcript_consequence_changes']
             
-            # Pathogenicity prediction changes
+            # MODERATE: Pathogenicity prediction changes
             if row['sift_change']:
                 priority_score += self.base_scores['sift_change']
             if row['polyphen_change']:
                 priority_score += self.base_scores['polyphen_change']
             
-            # Gene changes - CONDITIONAL on clinical significance
+            # MODERATE: Gene changes - CONDITIONAL on clinical significance
             if row['gene_changes'] > 0:
                 if is_clinically_significant or row['clin_sig_change'] or row['sift_change'] or row['polyphen_change']:
                     # Gene change is clinically relevant - use impact-based scoring
@@ -107,15 +84,31 @@ class ClinicalScorer:
                     elif hg19_impact == 'LOW' or hg38_impact == 'LOW':
                         priority_score += row['gene_changes'] * self.base_scores['gene_changes_low_impact']
                     else:
-                        priority_score += row['gene_changes'] * self.base_scores['gene_changes_mixed_impact']  # Mixed or unknown
+                        priority_score += row['gene_changes'] * self.base_scores['gene_changes_mixed_impact']
                 else:
                     # Gene change likely annotation synonym - minimal weight
                     priority_score += row['gene_changes'] * self.base_scores['gene_changes_minimal_weight']
             
-            # Other transcript-level issues
-            priority_score += row['same_consequence_different_transcripts'] * self.base_scores['same_consequence_different_transcripts']  # Moderate priority
+            # LOW: Annotation differences (DEMOTED - reduced weights)
+            priority_score += row['unmatched_consequences'] * self.base_scores['unmatched_consequences']
+            priority_score += row['same_consequence_different_transcripts'] * self.base_scores['same_consequence_different_transcripts']
             
-            # Clinical significance bonus (if any clinical data available)
+            # Technical liftover issues (unchanged)
+            if row['pos_match'] == 0:
+                priority_score += self.base_scores['position_mismatch']
+            if row['pos_difference'] > 10:
+                priority_score += self.base_scores['position_difference_moderate']
+            if row['pos_difference'] > 100:
+                priority_score += self.base_scores['position_difference_large']
+            if row['gt_match'] == 0:
+                priority_score += self.base_scores['genotype_mismatch']
+            
+            # BCFtools swap handling
+            swap_str = str(row['swap']) if pd.notna(row['swap']) else 'NA'
+            if swap_str == '1':
+                priority_score += self.base_scores['ref_alt_swap']
+            
+            # Bonuses (unchanged)
             has_clinical_data = (
                 not pd.isna(row['hg19_clin_sig']) and row['hg19_clin_sig'] not in ['', '-'] or
                 not pd.isna(row['hg38_clin_sig']) and row['hg38_clin_sig'] not in ['', '-']
@@ -123,15 +116,13 @@ class ClinicalScorer:
             if has_clinical_data:
                 priority_score += self.base_scores['has_clinical_data_bonus']
             
-            # Mapping status and impact adjustments
             if row['mapping_status'] == 'REGION':
                 priority_score += self.base_scores['region_mapping_bonus']
             
             if row['hg19_impact'] == 'HIGH' or row['hg38_impact'] == 'HIGH':
                 priority_score += self.base_scores['high_impact_bonus']
             
-            # CLINICAL EVIDENCE OVERRIDE (using normalized categories)
-            # Check if variant is benign based on multiple evidence sources
+            # CLINICAL EVIDENCE OVERRIDE (unchanged - works well)
             is_low_modifier_impact = (
                 row['hg19_impact'] in ['MODIFIER', 'LOW'] and 
                 row['hg38_impact'] in ['MODIFIER', 'LOW']
@@ -148,7 +139,6 @@ class ClinicalScorer:
         
             is_benign_variant = is_low_modifier_impact and has_benign_evidence
         
-            # Check if variant has pathogenic evidence (using normalized categories)
             has_pathogenic_evidence = (
                 row['hg19_clin_sig_normalized'] == 'PATHOGENIC' or 
                 row['hg38_clin_sig_normalized'] == 'PATHOGENIC' or
@@ -161,45 +151,50 @@ class ClinicalScorer:
             
             # Apply clinical evidence override
             if is_benign_variant:
-                priority_score *= self.clinical_override['benign_reduction_factor']  # 90% reduction for benign variants
+                priority_score *= self.clinical_override['benign_reduction_factor']
             elif has_pathogenic_evidence:
-                priority_score *= self.clinical_override['pathogenic_boost_factor']  # 2x boost for pathogenic variants
+                priority_score *= self.clinical_override['pathogenic_boost_factor']
             
-            # Determine priority category with updated logic
-            if row['same_transcript_consequence_changes'] > 0:
+            # REDESIGNED: Priority category determination with clinical focus
+            has_critical_clinical_change = clin_change in ['BENIGN_TO_PATHOGENIC', 'PATHOGENIC_TO_BENIGN'] or clin_change.startswith('VUS_TO_PATHOGENIC')
+            has_high_impact_transition = (row['impact_changes'] > 0 and is_clinically_significant and 
+                                        'HIGH' in [hg19_impact, hg38_impact])
+            
+            if has_critical_clinical_change or has_high_impact_transition:
                 priority_category = 'CRITICAL'
-            elif (is_clinically_significant and row['impact_changes'] > 0) or \
-                 row['clin_sig_change'] in ['BENIGN_TO_PATHOGENIC', 'PATHOGENIC_TO_BENIGN']:
+            elif (row['impact_changes'] > 0 and is_clinically_significant) or \
+                 (row['clin_sig_change'] and 'TO' in str(row['clin_sig_change']) and not row['clin_sig_change'].startswith('STABLE_')) or \
+                 row['same_transcript_consequence_changes'] > 0:
                 priority_category = 'HIGH'
-            elif (row['gene_changes'] > 0 and is_clinically_significant) or \
-                 row['clin_sig_change'] == 'OTHER_CHANGE' or row['sift_change'] or row['polyphen_change']:
+            elif row['sift_change'] or row['polyphen_change'] or \
+                 (row['gene_changes'] > 0 and (is_clinically_significant or row['clin_sig_change'] or row['sift_change'] or row['polyphen_change'])):
                 priority_category = 'MODERATE'
-            elif row['unmatched_consequences'] > 0 or \
-                 (row['impact_changes'] > 0 and not is_clinically_significant):
-                priority_category = 'INVESTIGATE'
-            elif is_benign_variant:
+            elif is_benign_variant or \
+                 (row['unmatched_consequences'] > 0 and not (row['clin_sig_change'] or row['sift_change'] or row['polyphen_change'])):
                 priority_category = 'LOW'
             else:
-                priority_category = 'MODERATE'
+                priority_category = 'INVESTIGATE'
             
-            # Create summary of discordance types for this variant
+            # Create summary of discordance types (updated priorities)
             discordance_summary = []
+            if has_critical_clinical_change:
+                discordance_summary.append(f"CRITICAL clinical significance change: {row['clin_sig_change']}")
+            if has_high_impact_transition:
+                discordance_summary.append(f"CRITICAL impact transition: {hg19_impact}→{hg38_impact}")
             if row['same_transcript_consequence_changes'] > 0:
                 discordance_summary.append(f"Same transcript consequence changes: {row['same_transcript_consequence_changes']}")
+            if row['impact_changes'] > 0 and is_clinically_significant:
+                discordance_summary.append(f"Impact level changes: {row['impact_changes']}")
             if row['gene_changes'] > 0:
                 discordance_summary.append(f"Gene annotation changes: {row['gene_changes']}")
-            if row['impact_changes'] > 0:
-                discordance_summary.append(f"Impact level changes: {row['impact_changes']}")
-            if row['same_consequence_different_transcripts'] > 0:
-                discordance_summary.append(f"Same consequence, different transcripts: {row['same_consequence_different_transcripts']}")
-            if row['unmatched_consequences'] > 0:
-                discordance_summary.append(f"Unmatched consequences")
-            if row['clin_sig_change']:
-                discordance_summary.append(f"Clinical significance change: {row['clin_sig_change']}")
             if row['sift_change']:
                 discordance_summary.append(f"SIFT change: {row['sift_change']}")
             if row['polyphen_change']:
                 discordance_summary.append(f"PolyPhen change: {row['polyphen_change']}")
+            if row['unmatched_consequences'] > 0:
+                discordance_summary.append(f"Unmatched consequences (annotation differences)")
+            if row['same_consequence_different_transcripts'] > 0:
+                discordance_summary.append(f"Same consequence, different transcripts: {row['same_consequence_different_transcripts']}")
             if row['pos_match'] == 0:
                 discordance_summary.append(f"Position mismatch")
             if row['gt_match'] == 0:
@@ -213,7 +208,7 @@ class ClinicalScorer:
             variant_info = row.to_dict()
             variant_info['priority_score'] = priority_score
             variant_info['priority_category'] = priority_category
-            variant_info['discordance_summary'] = '; '.join(discordance_summary) if discordance_summary else 'Position/genotype issues only'
+            variant_info['discordance_summary'] = '; '.join(discordance_summary) if discordance_summary else 'Technical issues only'
             
             scored_variants.append(variant_info)
         

@@ -1,91 +1,94 @@
 """
-Clinical evidence-driven discrepancy scoring configuration
+Clinical evidence-first discrepancy scoring configuration
 
-Scoring weights and rules for variant prioritization based on:
-- Clinical evidence (pathogenic/benign)
-- Impact magnitude transitions
-- Functional consequences
-- Annotation discordances
+REDESIGNED PRIORITIZATION FOCUS:
+- Clinical significance changes (rare but critical for interpretation)
+- Impact level transitions (functionally significant)
+- Reduced weight for VEP consequence mismatches (common annotation noise)
+
+Scoring weights prioritize changes that affect clinical decision-making.
 """
 
-# Magnitude-based impact transition scoring (clinically significant)
+# Clinical evidence-first impact transition scoring
 IMPACT_TRANSITION_SCORES = {
-    # HIGH impact transitions (most clinically significant)
-    ('HIGH', 'MODERATE'): 10,    # HIGH ↔ MODERATE
-    ('HIGH', 'LOW'): 12,         # HIGH ↔ LOW  
-    ('HIGH', 'MODIFIER'): 15,    # HIGH ↔ MODIFIER (most significant)
+    # HIGH impact transitions (clinically critical)
+    ('HIGH', 'MODERATE'): 15,    # HIGH ↔ MODERATE (critical for clinical interpretation)
+    ('HIGH', 'LOW'): 18,         # HIGH ↔ LOW (very critical)
+    ('HIGH', 'MODIFIER'): 20,    # HIGH ↔ MODIFIER (extremely critical)
     
-    # MODERATE impact transitions
-    ('MODERATE', 'LOW'): 8,      # MODERATE ↔ LOW
-    ('MODERATE', 'MODIFIER'): 10, # MODERATE ↔ MODIFIER
+    # MODERATE impact transitions (clinically significant)
+    ('MODERATE', 'LOW'): 10,     # MODERATE ↔ LOW (significant)
+    ('MODERATE', 'MODIFIER'): 12, # MODERATE ↔ MODIFIER (significant)
     
     # LOW impact transitions (annotation noise - minimal weight)
-    ('LOW', 'MODIFIER'): 1       # LOW ↔ MODIFIER (reduced from previous versions)
+    ('LOW', 'MODIFIER'): 1       # LOW ↔ MODIFIER (mostly annotation differences)
 }
 
-# Clinical evidence override factors
+# Clinical evidence override factors (unchanged - these work well)
 CLINICAL_OVERRIDE = {
     'benign_reduction_factor': 0.1,   # 90% score reduction for benign variants
     'pathogenic_boost_factor': 2.0    # 2x score boost for pathogenic variants
 }
 
-# Base scoring weights for different discordance types
+# REDESIGNED: Clinical evidence-first scoring weights
 BASE_SCORES = {
-    # Critical functional changes (highest priority)
-    'same_transcript_consequence_changes': 10,  # CRITICAL
+    # CRITICAL: Clinical interpretation changes (highest priority)
+    'clinical_sig_pathogenic_benign_change': 20,    # PATHOGENIC↔BENIGN (critical)
+    'clinical_sig_vus_to_pathogenic': 15,          # VUS→PATHOGENIC (critical)
+    'clinical_sig_benign_to_pathogenic': 20,       # BENIGN→PATHOGENIC (critical)
+    'clinical_sig_pathogenic_to_benign': 18,       # PATHOGENIC→BENIGN (critical)
     
-    # Clinical evidence changes
-    'clinical_sig_benign_to_pathogenic': 10,
-    'clinical_sig_pathogenic_to_benign': 8,
-    'clinical_sig_other_change': 5,
+    # HIGH: Functionally significant changes
+    'clinical_sig_other_change': 8,                # Other clinical changes (VUS transitions, etc.)
+    'same_transcript_consequence_changes': 6,      # DEMOTED: Same transcript changes
     
-    # Pathogenicity prediction changes
-    'sift_change': 5,
-    'polyphen_change': 5,
+    # MODERATE: Prediction and annotation changes
+    'sift_change': 5,                              # SIFT prediction changes
+    'polyphen_change': 5,                          # PolyPhen prediction changes
+    'gene_changes_high_impact': 4,                 # Gene changes (high impact context)
+    'gene_changes_moderate_impact': 3,             # Gene changes (moderate impact context)
+    'gene_changes_low_impact': 2,                  # Gene changes (low impact context)
+    'gene_changes_minimal_weight': 0.1,            # Gene changes (not clinically relevant)
+    'gene_changes_mixed_impact': 2,                # Gene changes (mixed/unknown impact)
     
-    # Impact-based gene changes (conditional on clinical significance)
-    'gene_changes_high_impact': 8,
-    'gene_changes_moderate_impact': 4,
-    'gene_changes_low_impact': 2,
-    'gene_changes_minimal_weight': 0.1,  # When not clinically relevant
-    'gene_changes_mixed_impact': 3,      # Mixed or unknown impact
+    # LOW: Technical and annotation issues (reduced weights)
+    'unmatched_consequences': 1,                   # DEMOTED: Unmatched consequences
+    'same_consequence_different_transcripts': 0.5, # DEMOTED: Different transcripts
+    'position_mismatch': 3,                        # Position issues (liftover problems)
+    'genotype_mismatch': 3,                        # Genotype issues (liftover problems)
+    'position_difference_moderate': 2,             # >10bp difference
+    'position_difference_large': 3,                # >100bp difference
+    'ref_alt_swap': 2,                            # BCFtools swap occurred
     
-    # Other discordance types
-    'unmatched_consequences': 4,                    # INVESTIGATE
-    'same_consequence_different_transcripts': 3,    # Moderate priority
-    'position_mismatch': 3,
-    'genotype_mismatch': 3,
-    'position_difference_moderate': 2,              # >10bp difference
-    'position_difference_large': 3,                 # >100bp difference
-    'ref_alt_swap': 2,                             # BCFtools swap occurred
-    'has_clinical_data_bonus': 2,                  # Any clinical data available
-    'region_mapping_bonus': 1,                     # REGION mapping status
-    'high_impact_bonus': 2                         # HIGH impact in either build
+    # Bonuses (unchanged)
+    'has_clinical_data_bonus': 2,                 # Any clinical data available
+    'region_mapping_bonus': 1,                    # REGION mapping status
+    'high_impact_bonus': 2                        # HIGH impact in either build
 }
 
-# Priority categories in order of clinical importance
-PRIORITY_CATEGORIES = ['CRITICAL', 'HIGH', 'MODERATE', 'INVESTIGATE', 'LOW']
+# REDESIGNED: Priority categories with clinical focus
+PRIORITY_CATEGORIES = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'INVESTIGATE']
 
-# Category determination rules
+# UPDATED: Category determination rules
 PRIORITY_RULES = {
     'CRITICAL': {
-        'description': 'Same transcript, different consequences',
-        'condition': 'same_transcript_consequence_changes > 0'
+        'description': 'Clinical interpretation changes (PATHOGENIC↔BENIGN, VUS→PATHOGENIC) OR high impact transitions',
+        'condition': 'major_clinical_significance_changes OR high_impact_transitions'
     },
     'HIGH': {
-        'description': 'Clinically significant impact transitions OR clinical significance changes',
-        'condition': 'clinically_significant_impact_changes OR major_clinical_significance_changes'
+        'description': 'Functionally significant changes (impact transitions, other clinical changes, same transcript)',
+        'condition': 'moderate_impact_transitions OR other_clinical_changes OR same_transcript_changes'
     },
     'MODERATE': {
-        'description': 'Gene changes with clinical significance OR prediction changes',
-        'condition': 'clinically_relevant_gene_changes OR pathogenicity_prediction_changes'
-    },
-    'INVESTIGATE': {
-        'description': 'Unmatched consequences OR non-significant transitions',
-        'condition': 'unmatched_consequences OR minor_impact_changes'
+        'description': 'Prediction changes and clinically relevant gene changes',
+        'condition': 'pathogenicity_prediction_changes OR clinically_relevant_gene_changes'
     },
     'LOW': {
-        'description': 'Benign variants',
-        'condition': 'is_benign_variant'
+        'description': 'Technical issues and annotation differences',
+        'condition': 'annotation_differences OR liftover_technical_issues'
+    },
+    'INVESTIGATE': {
+        'description': 'Unclear cases requiring further review',
+        'condition': 'insufficient_clinical_context OR mixed_evidence'
     }
 }

@@ -36,10 +36,10 @@ class PrioritizationPlotter:
             self.figure_config['main_figure']['cols'], 
             figsize=self.figure_config['main_figure']['figsize']
         )
-        fig.suptitle('Enhanced Variant Prioritization Analysis', fontsize=16, fontweight='bold')
+        fig.suptitle('Discrepant Variant Prioritization Analysis', fontsize=16, fontweight='bold')
         
-        # PLOT 1: Primary Discordance Types (moved to first position)
-        self._plot_discordance_types(df, axes[0,0])
+        # PLOT 1: Directional Clinical Significance Changes
+        self._plot_directional_clinical_changes(df, axes[0,0])
         
         # PLOT 2: Impact Level Transitions (hg19 vs hg38)
         self._plot_impact_transitions(df, axes[0,1])
@@ -47,8 +47,8 @@ class PrioritizationPlotter:
         # PLOT 3: Clinical Significance Transitions (hg19 vs hg38)
         self._plot_clinical_significance_transitions(df, axes[1,0])
         
-        # PLOT 4: Directional Clinical Significance Changes
-        self._plot_directional_clinical_changes(df, axes[1,1])
+        # PLOT 4: Primary Discordance Types 
+        self._plot_discordance_types(df, axes[1,1])
         
         plt.tight_layout()
         
@@ -176,6 +176,8 @@ class PrioritizationPlotter:
                       fontsize=12, transform=ax.transAxes)
             ax.set_title('Clinical Significance Transitions\n(hg19 → hg38)', fontsize=12, fontweight='bold')
     
+    # In plot_generator.py, replace the _plot_directional_clinical_changes method:
+
     def _plot_directional_clinical_changes(self, df, ax):
         """Plot directional clinical significance changes"""
         print("4. Creating directional clinical significance changes...")
@@ -198,25 +200,25 @@ class PrioritizationPlotter:
                 
                 ax.set_xlabel('Clinical Significance Change', fontweight='bold')
                 ax.set_ylabel('Variant Count', fontweight='bold')
-                ax.set_title('Directional Clinical Significance Changes\n(All Transitions)', fontsize=12, fontweight='bold')
+                ax.set_title('Clinical Significance Transitions (hg19→hg38)', fontsize=12, fontweight='bold') 
                 ax.set_xticks(range(len(change_counts)))
                 ax.set_xticklabels([change.replace('_', ' ') for change in change_counts.index], 
-                                  rotation=45, ha='right', fontsize=8)
+                                rotation=45, ha='right', fontsize=8)
                 ax.grid(True, alpha=0.3, axis='y')
                 
                 # Add count labels on bars
                 for i, (bar, count) in enumerate(zip(bars, change_counts.values)):
                     ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + count*0.01,
-                              str(count), ha='center', va='bottom', fontweight='bold', fontsize=9)
+                            str(count), ha='center', va='bottom', fontweight='bold', fontsize=9)
             else:
                 ax.text(0.5, 0.5, 'No clinical significance\nchanges found', ha='center', va='center',
-                          fontsize=12, transform=ax.transAxes)
-                ax.set_title('Directional Clinical Significance Changes\n(All Transitions)', fontsize=12, fontweight='bold')
+                        fontsize=12, transform=ax.transAxes)
+                ax.set_title('Clinical Significance Transitions (hg19→hg38)', fontsize=12, fontweight='bold')  
         else:
             ax.text(0.5, 0.5, 'No clinical significance\nchange data available', ha='center', va='center',
-                      fontsize=12, transform=ax.transAxes)
-            ax.set_title('Directional Clinical Significance Changes\n(All Transitions)', fontsize=12, fontweight='bold')
-    
+                    fontsize=12, transform=ax.transAxes)
+            ax.set_title('Clinical Significance Transitions (hg19→hg38)', fontsize=12, fontweight='bold')  
+        
     def _categorize_discordance_primary(self, summary):
         """Categorize discordance without numbers for aggregation"""
         if pd.isna(summary) or summary == '':
