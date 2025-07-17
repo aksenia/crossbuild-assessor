@@ -1,5 +1,5 @@
 """
-VEP consequence impact mapping
+VEP Consequence Impact Mappings and Clinical Significance Normalization
 
 Based on official Ensembl VEP consequence severity hierarchy.
 Maps consequence terms to impact levels for clinical prioritization.
@@ -65,6 +65,56 @@ IMPACT_NUMERIC_VALUES = {
     'MODIFIER': 1
 }
 
-# Clinical significance terms for pathogenic/benign classification
+# Clinical significance normalization mapping (from 1.5M dataset analysis)
+CLINICAL_SIGNIFICANCE_NORMALIZATION = {
+    # PATHOGENIC (includes likely_pathogenic)
+    'pathogenic': 'PATHOGENIC',
+    'likely_pathogenic': 'PATHOGENIC', 
+    'pathogenic/likely_pathogenic': 'PATHOGENIC',
+    'pathogenic/likely_pathogenic/pathogenic': 'PATHOGENIC',
+    'pathogenic/pathogenic': 'PATHOGENIC',
+    
+    # BENIGN (includes likely_benign)
+    'benign': 'BENIGN',
+    'likely_benign': 'BENIGN',
+    'benign/likely_benign': 'BENIGN',
+    
+    # VUS (uncertain significance + conflicting + low penetrance)
+    'uncertain_significance': 'VUS',
+    'conflicting_interpretations_of_pathogenicity': 'VUS',
+    'uncertain_significance/uncertain_risk_allele': 'VUS',
+    'low_penetrance': 'VUS',
+    
+    # RISK (risk alleles and factors)
+    'established_risk_allele': 'RISK',
+    'likely_risk_allele': 'RISK',
+    'uncertain_risk_allele': 'RISK',
+    'risk_factor': 'RISK',
+    
+    # DRUG_RESPONSE (pharmacogenomics)
+    'drug_response': 'DRUG_RESPONSE',
+    
+    # PROTECTIVE (protective variants)
+    'protective': 'PROTECTIVE',
+    
+    # OTHER (association studies)
+    'association': 'OTHER',
+    
+    # NONE (missing/no data)
+    'not_provided': 'NONE',
+    'other': 'NONE',
+    'no_classifications_from_unflagged_records': 'NONE',
+    '': 'NONE',
+    '-': 'NONE',
+    'nan': 'NONE'
+}
+
+# Normalized clinical significance categories (for consistency)
+NORMALIZED_CLINICAL_CATEGORIES = [
+    'PATHOGENIC', 'BENIGN', 'VUS', 'RISK', 
+    'DRUG_RESPONSE', 'PROTECTIVE', 'OTHER', 'NONE'
+]
+
+# Legacy pathogenic and benign terms (for backward compatibility)
 PATHOGENIC_TERMS = ['pathogenic', 'likely_pathogenic', 'drug_response']
 BENIGN_TERMS = ['benign', 'likely_benign']

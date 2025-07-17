@@ -80,13 +80,14 @@ class ClinicalScorer:
                 priority_score += self.impact_transition_scores[('LOW', 'MODIFIER')]
             
             priority_score += row['unmatched_consequences'] * self.base_scores['unmatched_consequences']               # INVESTIGATE
-            
-            # Clinical significance changes
+
+            # Clinical significance changes (using normalized directional changes)
             if row['clin_sig_change'] == 'BENIGN_TO_PATHOGENIC':
                 priority_score += self.base_scores['clinical_sig_benign_to_pathogenic']
             elif row['clin_sig_change'] == 'PATHOGENIC_TO_BENIGN':
                 priority_score += self.base_scores['clinical_sig_pathogenic_to_benign']
-            elif row['clin_sig_change'] == 'OTHER_CHANGE':
+            elif 'TO' in str(row['clin_sig_change']) and not row['clin_sig_change'].startswith('STABLE_'):
+                # Any other directional change (VUS_TO_PATHOGENIC, etc.)
                 priority_score += self.base_scores['clinical_sig_other_change']
             
             # Pathogenicity prediction changes
@@ -129,26 +130,28 @@ class ClinicalScorer:
             if row['hg19_impact'] == 'HIGH' or row['hg38_impact'] == 'HIGH':
                 priority_score += self.base_scores['high_impact_bonus']
             
-            # CLINICAL EVIDENCE OVERRIDE
+            # CLINICAL EVIDENCE OVERRIDE (using normalized categories)
             # Check if variant is benign based on multiple evidence sources
             is_low_modifier_impact = (
                 row['hg19_impact'] in ['MODIFIER', 'LOW'] and 
                 row['hg38_impact'] in ['MODIFIER', 'LOW']
             )
-            
+        
             has_benign_evidence = (
-                row['hg19_is_benign'] or row['hg38_is_benign'] or
+                row['hg19_clin_sig_normalized'] == 'BENIGN' or 
+                row['hg38_clin_sig_normalized'] == 'BENIGN' or
                 'benign' in str(row['hg19_sift']).lower() or
                 'benign' in str(row['hg19_polyphen']).lower() or
                 'benign' in str(row['hg38_sift']).lower() or
                 'benign' in str(row['hg38_polyphen']).lower()
             )
-            
+        
             is_benign_variant = is_low_modifier_impact and has_benign_evidence
-            
-            # Check if variant has pathogenic evidence
+        
+            # Check if variant has pathogenic evidence (using normalized categories)
             has_pathogenic_evidence = (
-                row['hg19_is_pathogenic'] or row['hg38_is_pathogenic'] or
+                row['hg19_clin_sig_normalized'] == 'PATHOGENIC' or 
+                row['hg38_clin_sig_normalized'] == 'PATHOGENIC' or
                 row['hg19_impact'] == 'HIGH' or row['hg38_impact'] == 'HIGH' or
                 'deleterious' in str(row['hg19_sift']).lower() or
                 'deleterious' in str(row['hg38_sift']).lower() or

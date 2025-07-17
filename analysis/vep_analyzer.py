@@ -11,7 +11,8 @@ from utils.clinical_utils import (
     is_pathogenic_clinical_significance,
     is_benign_clinical_significance, 
     parse_sift_prediction,
-    parse_polyphen_prediction
+    parse_polyphen_prediction,
+    normalize_clinical_significance
 )
 
 
@@ -260,6 +261,10 @@ class VEPAnalyzer:
         # Clinical significance and pathogenicity predictions
         hg19_clin_sig = hg19_annotations['clin_sig'].iloc[0] if len(hg19_annotations) > 0 else ''
         hg38_clin_sig = hg38_annotations['clin_sig'].iloc[0] if len(hg38_annotations) > 0 else ''
+        
+        # Normalize clinical significance
+        hg19_clin_sig_normalized = normalize_clinical_significance(hg19_clin_sig)
+        hg38_clin_sig_normalized = normalize_clinical_significance(hg38_clin_sig)
         hg19_sift = hg19_annotations['sift'].iloc[0] if len(hg19_annotations) > 0 else ''
         hg38_sift = hg38_annotations['sift'].iloc[0] if len(hg38_annotations) > 0 else ''
         hg19_polyphen = hg19_annotations['polyphen'].iloc[0] if len(hg19_annotations) > 0 else ''
@@ -271,19 +276,17 @@ class VEPAnalyzer:
         hg19_polyphen_pred, hg19_polyphen_score = parse_polyphen_prediction(hg19_polyphen)
         hg38_polyphen_pred, hg38_polyphen_score = parse_polyphen_prediction(hg38_polyphen)
         
-        # Check for clinical significance changes
-        hg19_is_pathogenic = is_pathogenic_clinical_significance(hg19_clin_sig)
-        hg38_is_pathogenic = is_pathogenic_clinical_significance(hg38_clin_sig)
-        hg19_is_benign = is_benign_clinical_significance(hg19_clin_sig)
-        hg38_is_benign = is_benign_clinical_significance(hg38_clin_sig)
+        # Check for clinical significance changes (using normalized categories)
+        hg19_is_pathogenic = (hg19_clin_sig_normalized == 'PATHOGENIC')
+        hg38_is_pathogenic = (hg38_clin_sig_normalized == 'PATHOGENIC')
+        hg19_is_benign = (hg19_clin_sig_normalized == 'BENIGN')
+        hg38_is_benign = (hg38_clin_sig_normalized == 'BENIGN')
         
-        clin_sig_change = ''
-        if hg19_is_benign and hg38_is_pathogenic:
-            clin_sig_change = 'BENIGN_TO_PATHOGENIC'
-        elif hg19_is_pathogenic and hg38_is_benign:
-            clin_sig_change = 'PATHOGENIC_TO_BENIGN'
-        elif hg19_is_benign != hg38_is_benign or hg19_is_pathogenic != hg38_is_pathogenic:
-            clin_sig_change = 'OTHER_CHANGE'
+        # Create directional clinical significance change
+        if hg19_clin_sig_normalized != hg38_clin_sig_normalized:
+            clin_sig_change = f'{hg19_clin_sig_normalized}_TO_{hg38_clin_sig_normalized}'
+        else:
+            clin_sig_change = f'STABLE_{hg19_clin_sig_normalized}'
         
         # Check for SIFT/PolyPhen changes
         sift_change = ''
@@ -335,6 +338,8 @@ class VEPAnalyzer:
             'hg38_impact': hg38_impact or '',
             'hg19_clin_sig': hg19_clin_sig or '',
             'hg38_clin_sig': hg38_clin_sig or '',
+            'hg19_clin_sig_normalized': hg19_clin_sig_normalized,
+            'hg38_clin_sig_normalized': hg38_clin_sig_normalized,
             'clin_sig_change': clin_sig_change,
             'hg19_gnomad_af': hg19_annotations['gnomadg_af'].iloc[0] if len(hg19_annotations) > 0 else None,
             'hg38_gnomad_af': hg38_annotations['gnomadg_af'].iloc[0] if len(hg38_annotations) > 0 else None,

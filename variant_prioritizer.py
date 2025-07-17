@@ -206,9 +206,11 @@ def format_for_excel(df):
     output_df['Impact_hg38'] = df['hg38_impact'].fillna('')
     output_df['Impact_Match'] = (df['hg19_impact'] == df['hg38_impact']).map({True: 'YES', False: 'NO'})
     
-    # Enhanced clinical significance tracking
+    # Enhanced clinical significance tracking (original + normalized)
     output_df['Clinical_Significance_hg19'] = df['hg19_clin_sig'].fillna('')
     output_df['Clinical_Significance_hg38'] = df['hg38_clin_sig'].fillna('')
+    output_df['Clinical_Significance_hg19_Normalized'] = df['hg19_clin_sig_normalized'].fillna('')
+    output_df['Clinical_Significance_hg38_Normalized'] = df['hg38_clin_sig_normalized'].fillna('')
     output_df['Clinical_Significance_Change'] = df['clin_sig_change'].fillna('')
     
     # Population frequencies
@@ -254,139 +256,248 @@ def create_summary_statistics(df_full, df_excel, output_dir):
         f.write(f"Total discordant variants analyzed: {len(df_full):,}\n")
         f.write(f"Variants included in Excel output: {len(df_excel):,}\n\n")
         
-        # FULL DATASET STATISTICS
-        f.write("FULL DATASET ANALYSIS (All Discordant Variants):\n")
-        f.write("-" * 50 + "\n")
-        
-        # Priority category distribution for full dataset
-        f.write("Priority Category Distribution (Full Dataset):\n")
+        # PRIORITY CATEGORY DISTRIBUTION
+        f.write("VARIANT PRIORITIZATION:\n")
+        f.write("-" * 25 + "\n")
         if len(df_full) > 0:
             category_counts = df_full['priority_category'].value_counts()
+            f.write("Priority category distribution:\n")
             for category, count in category_counts.items():
                 pct = count / len(df_full) * 100
                 f.write(f"  {category}: {count:,} ({pct:.1f}%)\n")
         f.write("\n")
         
-        # Score distribution for full dataset
-        f.write("Priority Score Distribution (Full Dataset):\n")
-        if len(df_full) > 0:
-            max_score = df_full['priority_score'].max()
-            if max_score <= 50:
-                intervals = [(0, 5), (5, 10), (10, 15), (15, 20), (20, 30), (30, 50)]
-            elif max_score <= 100:
-                intervals = [(0, 10), (10, 20), (20, 30), (30, 50), (50, 75), (75, 100)]
-            elif max_score <= 200:
-                intervals = [(0, 10), (10, 25), (25, 50), (50, 100), (100, 150), (150, 200)]
-            else:
-                intervals = [(0, 10), (10, 25), (25, 50), (50, 100), (100, 200), (200, 500), (500, int(max_score) + 1)]
+        # CLINICAL SIGNIFICANCE TRANSITION ANALYSIS
+        f.write("CLINICAL SIGNIFICANCE TRANSITIONS:\n")
+        f.write("-" * 40 + "\n")
+        if len(df_full) > 0 and 'hg19_clin_sig_normalized' in df_full.columns:
+            # Calculate variants with clinical annotations
+            has_hg19_clin = df_full['hg19_clin_sig_normalized'] != 'NONE'
+            has_hg38_clin = df_full['hg38_clin_sig_normalized'] != 'NONE'
+            has_any_clin = has_hg19_clin | has_hg38_clin
+            total_with_clin = has_any_clin.sum()
             
-            for start, end in intervals:
-                count = ((df_full['priority_score'] >= start) & (df_full['priority_score'] < end)).sum()
-                if count > 0:
-                    pct = count / len(df_full) * 100
-                    f.write(f"  Score {start}-{end-1}: {count:,} variants ({pct:.1f}%)\n")
+            f.write(f"Total variants with clinical annotations: {total_with_clin:,} ({total_with_clin/len(df_full)*100:.1f}%)\n\n")
+            
+            # Stable annotations
+            stable_variants = df_full[df_full['hg19_clin_sig_normalized'] == df_full['hg38_clin_sig_normalized']]
+            f.write(f"Stable annotations: {len(stable_variants):,} variants\n")
+            
+            stable_counts = stable_variants['hg19_clin_sig_normalized'].value_counts()
+            for category in ['PATHOGENIC', 'BENIGN', 'VUS', 'RISK', 'DRUG_RESPONSE', 'PROTECTIVE', 'OTHER', 'NONE']:
+                if category in stable_counts:
+                    f.write(f"  Stable {category}: {stable_counts[category]:,}\n")
+            
+            # Directional changes
+            changing_variants = df_full[df_full['hg19_clin_sig_normalized'] != df_full['hg38_clin_sig_normalized']]
+            f.write(f"\nDirectional changes: {len(changing_variants):,} variants\n")
+            
+            # Key clinical transitions
+            pathogenic_to_benign = len(df_full[(df_full['hg19_clin_sig_normalized'] == 'PATHOGENIC') & 
+                                             (df_full['hg38_clin_sig_normalized'] == 'BENIGN')])
+            benign_to_pathogenic = len(df_full[(df_full['hg19_clin_sig_normalized'] == 'BENIGN') & 
+                                             (df_full['hg38_clin_sig_normalized'] == 'PATHOGENIC')])
+            vus_transitions = len(df_full[((df_full['hg19_clin_sig_normalized'] == 'VUS') & 
+                                        (df_full['hg38_clin_sig_normalized'].isin(['PATHOGENIC', 'BENIGN']))) |
+                                       ((df_full['hg38_clin_sig_normalized'] == 'VUS') & 
+                                        (df_full['hg19_clin_sig_normalized'].isin(['PATHOGENIC', 'BENIGN'])))])
+            
+            if pathogenic_to_benign > 0:
+                f.write(f"  Pathogenic → Benign: {pathogenic_to_benign:,} (affects interpretation)\n")
+            if benign_to_pathogenic > 0:
+                f.write(f"  Benign → Pathogenic: {benign_to_pathogenic:,} (affects interpretation)\n")
+            if vus_transitions > 0:
+                f.write(f"  VUS transitions: {vus_transitions:,}\n")
         f.write("\n")
         
-        # Clinical evidence breakdown for FULL dataset
-        f.write("Clinical Evidence Breakdown (Full Dataset):\n")
+        # IMPACT LEVEL TRANSITION ANALYSIS
+        f.write("IMPACT LEVEL TRANSITIONS:\n")
+        f.write("-" * 30 + "\n")
         if len(df_full) > 0:
-            clinical_evidence_issues = (
-                (df_full['clin_sig_change'] != '').sum(),
-                (df_full['sift_change'] != '').sum(),
-                (df_full['polyphen_change'] != '').sum(),
-                (df_full['hg19_is_pathogenic'] | df_full['hg38_is_pathogenic']).sum(),
-                (df_full['hg19_is_benign'] | df_full['hg38_is_benign']).sum()
-            )
+            # Stable impact levels
+            stable_impact = df_full[df_full['hg19_impact'] == df_full['hg38_impact']]
+            f.write(f"Variants with stable impact: {len(stable_impact):,} ({len(stable_impact)/len(df_full)*100:.1f}%)\n")
             
-            f.write(f"  Clinical significance changes: {clinical_evidence_issues[0]:,} variants\n")
-            f.write(f"  SIFT prediction changes: {clinical_evidence_issues[1]:,} variants\n")
-            f.write(f"  PolyPhen prediction changes: {clinical_evidence_issues[2]:,} variants\n")
-            f.write(f"  Variants with pathogenic evidence: {clinical_evidence_issues[3]:,} variants\n")
-            f.write(f"  Variants with benign evidence: {clinical_evidence_issues[4]:,} variants\n")
+            # Clinically significant transitions
+            changing_impact = df_full[df_full['hg19_impact'] != df_full['hg38_impact']]
+            clinically_significant_changes = changing_impact[
+                (changing_impact['hg19_impact'].isin(['HIGH', 'MODERATE'])) |
+                (changing_impact['hg38_impact'].isin(['HIGH', 'MODERATE']))
+            ]
+            f.write(f"Clinically significant transitions: {len(clinically_significant_changes):,} variants\n")
+            
+            # Specific transitions
+            high_moderate = len(df_full[((df_full['hg19_impact'] == 'HIGH') & (df_full['hg38_impact'] == 'MODERATE')) |
+                                      ((df_full['hg19_impact'] == 'MODERATE') & (df_full['hg38_impact'] == 'HIGH'))])
+            high_low_modifier = len(df_full[((df_full['hg19_impact'] == 'HIGH') & (df_full['hg38_impact'].isin(['LOW', 'MODIFIER']))) |
+                                          ((df_full['hg38_impact'] == 'HIGH') & (df_full['hg19_impact'].isin(['LOW', 'MODIFIER'])))])
+            low_modifier = len(df_full[((df_full['hg19_impact'] == 'LOW') & (df_full['hg38_impact'] == 'MODIFIER')) |
+                                     ((df_full['hg19_impact'] == 'MODIFIER') & (df_full['hg38_impact'] == 'LOW'))])
+            
+            if high_moderate > 0:
+                f.write(f"  HIGH ↔ MODERATE: {high_moderate:,} variants\n")
+            if high_low_modifier > 0:
+                f.write(f"  HIGH ↔ LOW/MODIFIER: {high_low_modifier:,} variants\n")
+            if low_modifier > 0:
+                f.write(f"Annotation updates (LOW ↔ MODIFIER): {low_modifier:,} variants\n")
+        f.write("\n")
+
+        # DEBUG: Check impact data
+        f.write("\nDEBUG - Impact Analysis:\n")
+        if len(df_full) > 0:
+            # Check if impact data exists
+            hg19_impacts = df_full['hg19_impact'].value_counts()
+            hg38_impacts = df_full['hg38_impact'].value_counts()
+            f.write(f"HG19 impact distribution: {dict(hg19_impacts)}\n")
+            f.write(f"HG38 impact distribution: {dict(hg38_impacts)}\n")
+            
+            # Check impact_changes field
+            impact_changes_count = (df_full['impact_changes'] > 0).sum()
+            f.write(f"Variants with impact_changes > 0: {impact_changes_count}\n")
+            
+            # Check specific variants with clinical sig changes
+            clin_changing = df_full[df_full['hg19_clin_sig_normalized'] != df_full['hg38_clin_sig_normalized']]
+            if len(clin_changing) > 0:
+                f.write(f"Clinical significance changing variants impact data:\n")
+                for idx, row in clin_changing.head(5).iterrows():
+                    f.write(f"  Variant {row['source_chrom']}:{row['source_pos']}: "
+                        f"hg19_impact={row['hg19_impact']}, hg38_impact={row['hg38_impact']}, "
+                        f"impact_changes={row['impact_changes']}\n")
+        
+        # CLINICAL DATA COVERAGE ASSESSMENT
+        f.write("CLINICAL DATA COVERAGE:\n")
+        f.write("-" * 25 + "\n")
+        if len(df_full) > 0:
+            # Clinical significance data
+            if 'hg19_clin_sig_normalized' in df_full.columns:
+                has_clin_data = (df_full['hg19_clin_sig_normalized'] != 'NONE') | (df_full['hg38_clin_sig_normalized'] != 'NONE')
+                clin_data_count = has_clin_data.sum()
+                f.write(f"Variants with clinical significance data: {clin_data_count:,} ({clin_data_count/len(df_full)*100:.1f}%)\n")
+            
+            # Pathogenicity predictions
+            has_sift = (df_full['hg19_sift'] != '') | (df_full['hg38_sift'] != '')
+            has_polyphen = (df_full['hg19_polyphen'] != '') | (df_full['hg38_polyphen'] != '')
+            has_predictions = has_sift | has_polyphen
+            pred_count = has_predictions.sum()
+            f.write(f"Variants with pathogenicity predictions: {pred_count:,} ({pred_count/len(df_full)*100:.1f}%)\n")
+            
+            # Clinical evidence distribution
+            if 'hg19_clin_sig_normalized' in df_full.columns:
+                f.write("\nClinical evidence distribution:\n")
+                all_clin_values = pd.concat([df_full['hg19_clin_sig_normalized'], df_full['hg38_clin_sig_normalized']])
+                clin_distribution = all_clin_values.value_counts()
+                
+                high_confidence = clin_distribution.get('PATHOGENIC', 0) + clin_distribution.get('BENIGN', 0)
+                uncertain = clin_distribution.get('VUS', 0)
+                risk_drug = clin_distribution.get('RISK', 0) + clin_distribution.get('DRUG_RESPONSE', 0)
+                no_data = clin_distribution.get('NONE', 0)
+                
+                f.write(f"  High confidence (PATHOGENIC/BENIGN): {high_confidence:,}\n")
+                f.write(f"  Uncertain (VUS): {uncertain:,}\n")
+                f.write(f"  Risk/Drug response: {risk_drug:,}\n")
+                f.write(f"  No clinical data: {no_data:,}\n")
         f.write("\n")
         
-        # Functional issue breakdown for FULL dataset
-        f.write("Functional Issue Breakdown (Full Dataset):\n")
+        # FUNCTIONAL ISSUE BREAKDOWN
+        f.write("FUNCTIONAL DISCORDANCES:\n")
+        f.write("-" * 25 + "\n")
         if len(df_full) > 0:
             same_transcript_issues = (df_full['same_transcript_consequence_changes'] > 0).sum()
             gene_issues = (df_full['gene_changes'] > 0).sum()
             impact_issues = (df_full['impact_changes'] > 0).sum()
-            different_transcript_issues = (df_full['same_consequence_different_transcripts'] > 0).sum()
             unmatched_issues = (df_full['unmatched_consequences'] > 0).sum()
             
-            f.write(f"  Same transcript, different consequence: {same_transcript_issues:,} variants (CRITICAL)\n")
-            f.write(f"  Gene annotation changes: {gene_issues:,} variants (reduced weight)\n")
-            f.write(f"  Impact level changes: {impact_issues:,} variants (HIGH)\n")
-            f.write(f"  Unmatched consequences: {unmatched_issues:,} variants (INVESTIGATE)\n")
+            f.write(f"Same transcript, different consequences: {same_transcript_issues:,} variants (CRITICAL)\n")
+            f.write(f"Gene annotation changes: {gene_issues:,} variants\n")
+            f.write(f"Impact level changes: {impact_issues:,} variants\n")
+            f.write(f"Unmatched consequences: {unmatched_issues:,} variants\n")
         f.write("\n")
+        
+        # SPECIFIC TRANSITION MATRICES
+        f.write("KEY CLINICAL SIGNIFICANCE TRANSITIONS:\n")
+        f.write("-" * 40 + "\n")
+        if len(df_full) > 0 and 'hg19_clin_sig_normalized' in df_full.columns:
+            transition_matrix = pd.crosstab(df_full['hg19_clin_sig_normalized'], df_full['hg38_clin_sig_normalized'], 
+                                          rownames=['hg19'], colnames=['hg38'])
+            
+            # Show key transitions
+            key_categories = ['PATHOGENIC', 'BENIGN', 'VUS', 'NONE']
+            f.write("Transition matrix (rows=hg19, columns=hg38):\n")
+            f.write(f"{'':12}")
+            for cat in key_categories:
+                if cat in transition_matrix.columns:
+                    f.write(f"{cat:>12}")
+            f.write("\n")
+            
+            for hg19_cat in key_categories:
+                if hg19_cat in transition_matrix.index:
+                    f.write(f"{hg19_cat:12}")
+                    for hg38_cat in key_categories:
+                        if hg38_cat in transition_matrix.columns:
+                            value = transition_matrix.loc[hg19_cat, hg38_cat] if hg38_cat in transition_matrix.columns else 0
+                            f.write(f"{value:>12}")
+                    f.write("\n")
         f.write("\n")
         
-        # Clinical review recommendations
-        f.write("CLINICAL REVIEW RECOMMENDATIONS - CLINICAL EVIDENCE-DRIVEN STRATEGY\n")
-        f.write("-" * 60 + "\n")
+        # QUALITY RECOMMENDATIONS
+        f.write("CLINICAL WORKFLOW RECOMMENDATIONS:\n")
+        f.write("-" * 35 + "\n")
         
-        f.write("PRIORITY 1 - CRITICAL:\n")
-        f.write("1. Same transcript, different consequences (Score contribution: +10)\n")
-        f.write("   - Same RefSeq/Ensembl ID, but different functional impact\n")
-        f.write("   - May indicate annotation errors or genome build issues\n")
-        f.write("   - Requires clinical review and potential wet lab validation\n\n")
+        f.write("CRITICAL VARIANTS:\n")
+        f.write("• Same transcript with different consequences\n")
+        f.write("• Potential functional impact on protein products\n")
+        f.write("• Manual review and potential validation recommended\n\n")
         
-        f.write("PRIORITY 2 - HIGH:\n")
-        f.write("2. Clinical significance changes (Score contribution: +10 benign↔pathogenic, +8 pathogenic↔benign, +5 other)\n")
-        f.write("   - Changes in ClinVar clinical significance between builds\n")
-        f.write("   - Critical for clinical interpretation and reporting\n")
-        f.write("3. High impact functional changes (Score contribution: VEP IMPACT-WEIGHTED)\n")
-        f.write("   - HIGH impact variants get priority regardless of gene symbol differences\n\n")
+        f.write("HIGH PRIORITY VARIANTS:\n")
+        f.write("• Clinical significance changes affecting interpretation\n")
+        f.write("• Significant impact level transitions\n")
+        f.write("• Priority review within clinical workflow\n\n")
         
-        f.write("VEP IMPACT-BASED SCORING SYSTEM (with Clinical Override):\n")
-        f.write("-" * 55 + "\n")
+        f.write("MODERATE PRIORITY VARIANTS:\n")
+        f.write("• Pathogenicity prediction changes\n")
+        f.write("• Clinically relevant gene changes\n")
+        f.write("• Standard review process\n\n")
+        
+        f.write("INVESTIGATE VARIANTS:\n")
+        f.write("• Unmatched consequences requiring investigation\n")
+        f.write("• Non-significant transitions\n")
+        f.write("• Secondary review or automated filtering\n\n")
+        
+        f.write("LOW PRIORITY VARIANTS:\n")
+        f.write("• Benign variants with minimal changes\n")
+        f.write("• Annotation updates with no clinical impact\n")
+        f.write("• Informational only\n\n")
+        
+        # SCORING METHODOLOGY
+        f.write("VARIANT DISCREPANCY SCORING METHODOLOGY:\n")
+        f.write("-" * 45 + "\n")
+        f.write("Clinical evidence drives prioritization over annotation model differences:\n\n")
+        
+        f.write("MAGNITUDE-BASED IMPACT SCORING:\n")
+        f.write("• HIGH ↔ MODERATE transitions: +10 points (clinically significant)\n")
+        f.write("• HIGH ↔ LOW/MODIFIER transitions: +12-15 points (highly significant)\n")
+        f.write("• MODERATE ↔ LOW/MODIFIER transitions: +8-10 points (significant)\n")
+        f.write("• LOW ↔ MODIFIER transitions: +1 point (annotation noise)\n\n")
+        
         f.write("CLINICAL EVIDENCE OVERRIDE:\n")
         f.write("• 90% score reduction for benign variants (LOW/MODIFIER + benign evidence)\n")
         f.write("• 2x score boost for pathogenic variants (HIGH impact or pathogenic evidence)\n")
         f.write("• Falls back to impact/consequence changes when clinical data unavailable\n\n")
         
-        f.write("CORE SCORING (follows official VEP consequence severity hierarchy):\n\n")
-        f.write("HIGH IMPACT (reduced gene weight: +8 points per gene change):\n")
-        f.write("• transcript_ablation, splice_acceptor_variant, splice_donor_variant\n")
-        f.write("• stop_gained, frameshift_variant, stop_lost, start_lost\n")
-        f.write("• transcript_amplification, feature_elongation, feature_truncation\n\n")
-        f.write("MODERATE IMPACT (reduced gene weight: +4 points per gene change):\n")
-        f.write("• inframe_insertion, inframe_deletion, missense_variant\n")
-        f.write("• protein_altering_variant\n\n")
-        f.write("LOW IMPACT (reduced gene weight: +2 points per gene change):\n")
-        f.write("• splice_donor_5th_base_variant, splice_region_variant\n")
-        f.write("• splice_donor_region_variant, splice_polypyrimidine_tract_variant\n")
-        f.write("• incomplete_terminal_codon_variant, start_retained_variant\n")
-        f.write("• stop_retained_variant, synonymous_variant\n\n")
-        f.write("MODIFIER IMPACT (minimal gene weight: +0.5 points per gene change):\n")
-        f.write("• coding_sequence_variant, mature_miRNA_variant\n")
-        f.write("• 5_prime_UTR_variant, 3_prime_UTR_variant\n")
-        f.write("• non_coding_transcript_exon_variant, intron_variant\n")
-        f.write("• upstream_gene_variant, downstream_gene_variant\n")
-        f.write("• regulatory_region_variant, intergenic_variant, etc.\n\n")
+        f.write("CORE SCORING COMPONENTS:\n")
+        f.write("• Same transcript consequence changes: +10 points (CRITICAL)\n")
+        f.write("• Clinical significance changes: +5-10 points\n")
+        f.write("• SIFT/PolyPhen changes: +5 points each\n")
+        f.write("• Gene changes: Impact-weighted (+0.1-8 points)\n")
+        f.write("• Position/genotype issues: +2-3 points each\n\n")
         
-        f.write("PATHOGENICITY PREDICTION CHANGES (+5 points each):\n")
-        f.write("• SIFT: deleterious ↔ tolerated transitions\n")
-        f.write("• PolyPhen: probably_damaging ↔ benign transitions\n\n")
-        
-        f.write("KEY IMPROVEMENTS:\n")
-        f.write("• Reduced gene symbol weight (many differences are synonyms, not functional changes)\n")
-        f.write("• Clinical evidence drives prioritization over annotation model differences\n")
-        f.write("• Benign variants suppressed regardless of annotation changes\n")
-        f.write("• Pathogenic variants boosted for clinical attention\n\n")
-        
-        f.write("ENHANCED OUTPUT COLUMNS:\n")
-        f.write("• GT_hg19, GT_hg38: Actual genotypes from source alleles\n")
-        f.write("• Problematic_Transcripts_hg19/hg38: Specific transcript IDs with issues\n")
-        f.write("• Clinical_Significance_Change: Tracks benign↔pathogenic transitions\n")
-        f.write("• SIFT_Change, PolyPhen_Change: Tracks pathogenicity prediction changes\n")
-        f.write("• Priority_Category: Single column replacing multiple boolean flags\n\n")
-        
-        f.write("CACHING INFORMATION:\n")
-        f.write("- VEP analysis results cached for faster subsequent runs\n")
-        f.write("- Priority scores calculated on-the-fly for easy recalibration\n")
-        f.write("- Use --force flag to recalculate VEP analysis and update cache\n")
-        f.write("- Cache location: [output_dir]/variant_analysis_cache.pkl\n")
+        f.write("DATA PROCESSING NOTES:\n")
+        f.write("• All coordinates use VEP normalization (SNVs: original, Indels: original+1)\n")
+        f.write("• Clinical significance normalized to 8 categories (PATHOGENIC, BENIGN, VUS, etc.)\n")
+        f.write("• VEP analysis results cached for faster subsequent runs\n")
+        f.write("• Priority scores calculated fresh for easy recalibration\n")
+
+    print(f"✓ Enhanced summary statistics saved to: {summary_file}")
 
 def main():
     parser = argparse.ArgumentParser(
