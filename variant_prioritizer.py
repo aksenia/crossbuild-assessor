@@ -86,6 +86,9 @@ from visualization.plot_generator import PrioritizationPlotter
 # Import analysis engine
 from analysis.variant_processor import VariantProcessor
 
+from utils.summary_utils import SummaryDataCalculator
+import json
+
 # Set visualization style from config
 plt.style.use(PLOT_STYLE_CONFIG['style'])
 sns.set_palette(PLOT_STYLE_CONFIG['seaborn_palette'])
@@ -240,6 +243,113 @@ def format_for_excel(df):
         print(output_df[['Rank', 'Chromosome', 'Position_hg19', 'Gene_hg19', 'Priority_Score', 'Priority_Category']].head().to_string(index=False))
     
     return output_df
+
+
+def create_clinical_csv_output(df, output_dir, max_variants=10000):
+    """Create clinical evidence-focused CSV output for variant prioritization"""
+    
+    if len(df) == 0:
+        print("No variants to output")
+        return pd.DataFrame()
+    
+    print(f"Creating clinical evidence-focused CSV output for top {min(len(df), max_variants):,} variants...")
+    
+    # Take top variants by priority score
+    output_df = df.head(max_variants).copy()
+    
+    # Add rank column
+    output_df['Rank'] = range(1, len(output_df) + 1)
+    
+    # Clinical evidence-focused column selection and renaming
+    column_mapping = {
+        'Rank': 'Rank',
+        'source_chrom': 'Chromosome',
+        'source_pos': 'Position_hg19',
+        'bcftools_hg38_pos': 'Position_hg38',
+        'source_alleles': 'Alleles',
+        'hg19_gene': 'Gene_hg19',
+        'hg38_gene': 'Gene_hg38',
+        'hg19_clin_sig_normalized': 'Clinical_Significance_hg19',
+        'hg38_clin_sig_normalized': 'Clinical_Significance_hg38',
+        'hg19_impact': 'Impact_hg19',
+        'hg38_impact': 'Impact_hg38',
+        'hg19_consequence': 'Consequence_hg19',
+        'hg38_consequence': 'Consequence_hg38',
+        'hg19_sift': 'SIFT_hg19',
+        'hg38_sift': 'SIFT_hg38',
+        'hg19_polyphen': 'PolyPhen_hg19',
+        'hg38_polyphen': 'PolyPhen_hg38',
+        'priority_score': 'Priority_Score',
+        'priority_category': 'Priority_Category',
+        'discordance_summary': 'Discordance_Summary',
+        'same_transcript_consequence_changes': 'Transcript_Changes',
+        'gene_changes': 'Gene_Changes',
+        'impact_changes': 'Impact_Changes',
+        'clin_sig_change': 'Clinical_Change_Direction',
+        'sift_change': 'SIFT_Change',
+        'polyphen_change': 'PolyPhen_Change',
+        'pos_match': 'Position_Match',
+        'gt_match': 'Genotype_Match',
+        'mapping_status': 'Mapping_Status'
+    }
+    
+    # Create output dataframe with renamed columns
+    output_columns = []
+    for old_col, new_col in column_mapping.items():
+        if old_col in output_df.columns:
+            output_df[new_col] = output_df[old_col]
+            output_columns.append(new_col)
+    
+    # Add clinical change indicator
+    if 'Clinical_Change_Direction' in output_columns:
+        output_df['Has_Clinical_Change'] = output_df['Clinical_Change_Direction'].apply(
+            lambda x: 'YES' if x and x != '' and 'STABLE_' not in str(x) else 'NO'
+        )
+        output_columns.append('Has_Clinical_Change')
+    
+    # Add impact change indicator
+    if 'Impact_hg19' in output_columns and 'Impact_hg38' in output_columns:
+        output_df['Has_Impact_Change'] = (output_df['Impact_hg19'] != output_df['Impact_hg38']).apply(
+            lambda x: 'YES' if x else 'NO'
+        )
+        output_columns.append('Has_Impact_Change')
+    
+    # Add consequence change indicator
+    if 'Consequence_hg19' in output_columns and 'Consequence_hg38' in output_columns:
+        output_df['Has_Consequence_Change'] = (output_df['Consequence_hg19'] != output_df['Consequence_hg38']).apply(
+            lambda x: 'YES' if x else 'NO'
+        )
+        output_columns.append('Has_Consequence_Change')
+    
+    # Select only the columns we want in the final output
+    final_df = output_df[output_columns].copy()
+    
+    # Clean up data for clinical compatibility
+    final_df = final_df.fillna('')
+    
+    # Convert numeric columns to appropriate types
+    numeric_columns = ['Priority_Score', 'Transcript_Changes', 'Gene_Changes', 'Impact_Changes']
+    for col in numeric_columns:
+        if col in final_df.columns:
+            final_df[col] = pd.to_numeric(final_df[col], errors='coerce').fillna(0)
+    
+    # Save to CSV
+    output_file = output_dir / 'prioritized_variants.csv'
+    final_df.to_csv(output_file, index=False)
+    
+    print(f"✓ Clinical evidence CSV saved to: {output_file}")
+    print(f"  - Total variants: {len(final_df):,}")
+    print(f"  - Columns: {len(final_df.columns)}")
+    
+    # Print priority distribution
+    if 'Priority_Category' in final_df.columns:
+        category_counts = final_df['Priority_Category'].value_counts()
+        print("  - Priority distribution:")
+        for category, count in category_counts.items():
+            print(f"    {category}: {count:,}")
+    
+    return final_df
+
 
 def create_summary_statistics(df_full, df_excel, output_dir):
     """Create summary statistics file with clinical evidence-driven analysis details for FULL dataset"""
@@ -492,6 +602,7 @@ def create_summary_statistics(df_full, df_excel, output_dir):
 
     print(f"✓ Summary statistics saved to: {summary_file}")
 
+
 def main():
     parser = argparse.ArgumentParser(
         description='Create prioritized variant list with clinical evidence-driven analysis',
@@ -504,7 +615,7 @@ USAGE EXAMPLES:
     python variant_prioritizer.py -d data.db -o results/ --force  # Recalculate ignoring cache
 
 OUTPUT FILES:
-    • prioritized_variants.csv - Excel-compatible ranked variant list (top variants only)
+    • prioritized_variants.csv - Clinical evidence-focused ranked variant list (top variants only)
     • variant_prioritization_plots.png - Visual analysis plots (full dataset)
     • variant_prioritization_summary.txt - Detailed summary report (full dataset)
     • variant_analysis_cache.pkl - Cached VEP analysis results (no scores)
@@ -518,8 +629,8 @@ CACHING BEHAVIOR:
 CLINICAL EVIDENCE-DRIVEN SCORING:
     • 90% score reduction for benign variants (LOW/MODIFIER + benign evidence)
     • 2x score boost for pathogenic variants (HIGH impact or pathogenic evidence)
-    • Reduced gene symbol weight (focus on functional changes over synonyms)
-    • Clinical significance changes: +10 points (benign ↔ pathogenic)
+    • Clinical significance changes: +15-20 points (PATHOGENIC↔BENIGN, VUS→PATHOGENIC)
+    • Same transcript consequence changes: +6 points (demoted from CRITICAL)
     • SIFT/PolyPhen changes: +5 points each (deleterious ↔ tolerated)
     • Falls back to impact/consequence changes when clinical data unavailable
         """
@@ -537,119 +648,150 @@ CLINICAL EVIDENCE-DRIVEN SCORING:
                        help='Skip plot generation (faster for large datasets)')
     parser.add_argument('--force', action='store_true',
                        help='Force recalculation of VEP analysis (ignore cache)')
+    parser.add_argument('--export-json', action='store_true',
+                       help='Export structured results as JSON (optional)')
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Enable verbose output')
     
     args = parser.parse_args()
     
-    db_path = args.db_path
-    output_dir = Path(args.output_dir)
-    print(f"✓ Using database: {db_path}")
-    print(f"✓ Output directory: {output_dir}")
-    
-    if args.force:
-        print("✓ Force recalculation enabled (will ignore cache)")
-    
-    # Create output directory
-    output_dir.mkdir(exist_ok=True, parents=True)
-    
-    create_plots = not args.no_plots
-    
     try:
-        print(f"\n=== STARTING VARIANT PRIORITIZATION ===")
-        print("Using clinical evidence-driven scoring with benign suppression and pathogenic boost")
+        # Validate inputs
+        db_path = Path(args.db_path)
+        if not db_path.exists():
+            print(f"Error: Database file not found: {db_path}")
+            return 1
+        
+        output_dir = Path(args.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        
+        if args.verbose:
+            print(f"Database: {db_path}")
+            print(f"Output directory: {output_dir}")
+            print(f"Max variants: {args.max_variants:,}")
+            print(f"Min score threshold: {args.min_score}")
+            print(f"Force recalculation: {args.force}")
         
         # Connect to database
-        conn = connect_database(db_path)
-        print(f"✓ Connected to database: {db_path}")
-
-
-        # Calculate variant scores - with caching (VEP analysis only)
+        print("Connecting to database...")
+        conn = sqlite3.connect(db_path)
+        
+        # Check database contents
+        table_check = pd.read_sql_query("""
+        SELECT name FROM sqlite_master WHERE type='table'
+        """, conn)
+        
+        required_tables = ['comparison', 'hg19_vep', 'hg38_vep']
+        missing_tables = [table for table in required_tables if table not in table_check['name'].values]
+        
+        if missing_tables:
+            print(f"Error: Missing required tables: {missing_tables}")
+            print("Available tables:", table_check['name'].tolist())
+            conn.close()
+            return 1
+        
+        # Set up caching
         cache_file = output_dir / 'variant_analysis_cache.pkl'
+        
+        # Initialize variant processor
         processor = VariantProcessor()
-        df_full = processor.process_all_variants(conn, cache_file, args.force)
+        
+        print("\n" + "="*80)
+        print("CROSSBUILD ASSESSOR - VARIANT PRIORITIZATION")
+        print("="*80)
+        
+        # Process all variants (with caching and scoring)
+        result_df = processor.process_all_variants(
+            conn, 
+            cache_file=cache_file, 
+            force_recalculate=args.force
+        )
+        
+        if len(result_df) == 0:
+            print("\nNo discordant variants found for prioritization.")
+            conn.close()
+            return 0
+        
+        print(f"\n✓ Analysis completed: {len(result_df):,} total discordant variants found")
+        
+        # Filter by minimum score
+        if args.min_score > 0:
+            filtered_df = result_df[result_df['priority_score'] >= args.min_score].copy()
+            print(f"✓ Filtered by min score ({args.min_score}): {len(filtered_df):,} variants remain")
+        else:
+            filtered_df = result_df.copy()
+        
+        # Sort by priority score (descending)
+        filtered_df = filtered_df.sort_values('priority_score', ascending=False)
+        
+        # Create clinical evidence-focused CSV output
+        output_df = create_clinical_csv_output(filtered_df, output_dir, args.max_variants)
+        
+        # Generate plots (unless disabled)
+        if not args.no_plots and len(result_df) > 0:
+            try:
+                print("\nGenerating prioritization visualizations...")
+                from visualization.plot_generator import PrioritizationPlotter
+                from config.visualization_config import PLOT_COLORS, FIGURE_CONFIG
                 
-        if len(df_full) == 0:
-            print("No problematic variants found.")
-            return
+                plotter = PrioritizationPlotter(PLOT_COLORS, FIGURE_CONFIG)
+                plotter.create_all_plots(result_df, conn, output_dir)
+                
+            except ImportError as e:
+                print(f"Warning: Could not generate plots: {e}")
+                print("Install matplotlib and seaborn for visualization support")
+            except Exception as e:
+                print(f"Warning: Plot generation failed: {e}")
         
-        # Sort by priority score (highest first)
-        df_full = df_full.sort_values('priority_score', ascending=False)
+        # Create summary statistics using BOTH full dataset and CSV subset
+        create_summary_statistics(result_df, output_df, output_dir)
         
-        # Show breakdown of FULL dataset
-        print(f"\nFull dataset breakdown (all {len(df_full):,} discordant variants):")
-        same_transcript_critical_full = (df_full['same_transcript_consequence_changes'] > 0).sum()
-        gene_change_critical_full = (df_full['gene_changes'] > 0).sum()
-        unmatched_critical_full = (df_full['unmatched_consequences'] > 0).sum()
-        clinical_changes_full = (df_full['clin_sig_change'] != '').sum()
-        pathogenicity_changes_full = ((df_full['sift_change'] != '') | (df_full['polyphen_change'] != '')).sum()
-        
-        print(f"  Same transcript consequence changes: {same_transcript_critical_full:,}")
-        print(f"  Gene annotation changes: {gene_change_critical_full:,}")
-        print(f"  Unmatched consequences: {unmatched_critical_full:,}")
-        print(f"  Clinical significance changes: {clinical_changes_full:,}")
-        print(f"  Pathogenicity prediction changes: {pathogenicity_changes_full:,}")
-        
-        # Show priority category breakdown
-        print(f"\nPriority category breakdown:")
-        category_counts = df_full['priority_category'].value_counts()
-        for category, count in category_counts.items():
-            pct = count / len(df_full) * 100
-            print(f"  {category}: {count:,} ({pct:.1f}%)")
-        
-        # Filter by minimum score and maximum variants for EXCEL OUTPUT ONLY
-        df_excel = df_full[df_full['priority_score'] >= args.min_score]
-        df_excel = df_excel.head(args.max_variants)
-        
-        print(f"\nSelected {len(df_excel):,} variants for Excel output (score >= {args.min_score}, max {args.max_variants:,})")
-        
-        
-        # Create prioritization plots using FULL dataset
-        if create_plots:
-            plotter = PrioritizationPlotter(PLOT_COLORS, FIGURE_CONFIG)
-            plotter.create_all_plots(df_full, conn, output_dir)
-        
-        # Format EXCEL subset for Excel
-        output_df = format_for_excel(df_excel)
-        
-        # Save to CSV
-        csv_file = output_dir / 'prioritized_variants.csv'
-        output_df.to_csv(csv_file, index=False, encoding='utf-8')
-        
-        # Create summary statistics using BOTH full dataset and Excel subset
-        create_summary_statistics(df_full, output_df, output_dir)
+        # Optional JSON export
+        if args.export_json:
+            print("Exporting structured JSON data...")
+            calculator = SummaryDataCalculator()
+            priority_data = calculator.calculate_prioritization_summary(result_df, output_df)
+            
+            json_file = output_dir / 'prioritization_results.json'
+            with open(json_file, 'w') as f:
+                json.dump(priority_data, f, indent=2, default=str)
+            print(f"✓ JSON data exported to: {json_file}")
         
         conn.close()
         
-        print(f"\n=== VARIANT PRIORITIZATION COMPLETED ===")
-        print(f"✓ Output files created:")
-        print(f"  • {csv_file}")
-        if create_plots:
-            print(f"  • {output_dir / 'variant_prioritization_plots.png'}")
-        print(f"  • {output_dir / 'variant_prioritization_summary.txt'}")
-        print(f"\nTop 5 priority variants (Excel output):")
-        display_cols = ['Rank', 'Chromosome', 'Position_hg19', 'Gene_hg19', 'Priority_Score', 'Priority_Category']
-        print(output_df[display_cols].head().to_string(index=False))
+        # Final summary
+        print("\n" + "="*80)
+        print("PRIORITIZATION COMPLETED SUCCESSFULLY")
+        print("="*80)
+        print(f"📁 Output directory: {output_dir}")
+        print(f"📊 Total variants analyzed: {len(result_df):,}")
+        print(f"📋 Variants in CSV output: {len(output_df):,}")
         
-        if same_transcript_critical_full > 0:
-            print(f"\n⚠️  ATTENTION: {same_transcript_critical_full:,} variants with CRITICAL transcript changes found in full dataset")
-            print(f"   → Filter by Priority_Category = 'CRITICAL' for priority review")
+        if len(output_df) > 0:
+            # Show priority category breakdown
+            priority_summary = output_df['Priority_Category'].value_counts()
+            print(f"\n🎯 Priority distribution:")
+            for category, count in priority_summary.items():
+                percentage = count / len(output_df) * 100
+                print(f"   {category}: {count:,} ({percentage:.1f}%)")
+            
+            # Show clinical changes
+            if 'Has_Clinical_Change' in output_df.columns:
+                clinical_changes = (output_df['Has_Clinical_Change'] == 'YES').sum()
+                print(f"🔬 Clinical significance changes: {clinical_changes:,}")
         
-        if clinical_changes_full > 0:
-            print(f"\n🏥 CLINICAL: {clinical_changes_full:,} variants with clinical significance changes")
-            print(f"   → Filter by Clinical_Significance_Change column for clinical review")
+        print(f"\n✅ Review prioritized_variants.csv for clinical decision support")
         
-        print(f"\nAll coordinates are VEP-normalized (SNVs: original, Indels: original+1)")
-        print(f"\nNOTE: Plots and summaries reflect FULL dataset ({len(df_full):,} variants)")
-        print(f"      Excel file contains top {len(df_excel):,} variants only")
-        print(f"      Clinical evidence-driven scoring with benign suppression applied")
-        
+    except KeyboardInterrupt:
+        print("\n⚠️  Analysis interrupted by user")
+        return 1
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"\n❌ Error during analysis: {e}")
         if args.verbose:
             import traceback
             traceback.print_exc()
         return 1
+
 
 if __name__ == "__main__":
     main()

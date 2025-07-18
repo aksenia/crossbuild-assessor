@@ -250,25 +250,74 @@ class VEPAnalyzer:
                 for tx_id, data in remaining_hg38.items():
                     problematic_transcripts_hg38.append(f"{data['feature_id']}({data['consequence']})")
         
-        # Get representative VEP information
-        hg19_gene = hg19_transcripts_df['symbol'].iloc[0] if len(hg19_transcripts_df) > 0 else (hg19_annotations['symbol'].iloc[0] if len(hg19_annotations) > 0 else '')
-        hg38_gene = hg38_transcripts_df['symbol'].iloc[0] if len(hg38_transcripts_df) > 0 else (hg38_annotations['symbol'].iloc[0] if len(hg38_annotations) > 0 else '')
-        hg19_consequence = hg19_transcripts_df['consequence'].iloc[0] if len(hg19_transcripts_df) > 0 else (hg19_annotations['consequence'].iloc[0] if len(hg19_annotations) > 0 else '')
-        hg38_consequence = hg38_transcripts_df['consequence'].iloc[0] if len(hg38_transcripts_df) > 0 else (hg38_annotations['consequence'].iloc[0] if len(hg38_annotations) > 0 else '')
-        hg19_impact = hg19_annotations['impact'].iloc[0] if len(hg19_annotations) > 0 else ''
-        hg38_impact = hg38_annotations['impact'].iloc[0] if len(hg38_annotations) > 0 else ''
+        # FIXED: Get representative VEP information with proper fallbacks
+        # Priority: transcript data > any annotation data > empty string
+        def get_best_gene(transcripts_df, annotations_df):
+            """Get the best available gene symbol with proper fallback"""
+            # First try transcript data
+            if len(transcripts_df) > 0:
+                gene_from_transcript = transcripts_df['symbol'].iloc[0]
+                if pd.notna(gene_from_transcript) and gene_from_transcript != '' and gene_from_transcript != '-':
+                    return gene_from_transcript
+            
+            # Fallback to any annotation data
+            if len(annotations_df) > 0:
+                gene_from_annotation = annotations_df['symbol'].iloc[0]
+                if pd.notna(gene_from_annotation) and gene_from_annotation != '' and gene_from_annotation != '-':
+                    return gene_from_annotation
+            
+            # Final fallback
+            return ''
+        
+        def get_best_consequence(transcripts_df, annotations_df):
+            """Get the best available consequence with proper fallback"""
+            if len(transcripts_df) > 0:
+                cons_from_transcript = transcripts_df['consequence'].iloc[0]
+                if pd.notna(cons_from_transcript) and cons_from_transcript != '' and cons_from_transcript != '-':
+                    return cons_from_transcript
+            
+            if len(annotations_df) > 0:
+                cons_from_annotation = annotations_df['consequence'].iloc[0]
+                if pd.notna(cons_from_annotation) and cons_from_annotation != '' and cons_from_annotation != '-':
+                    return cons_from_annotation
+            
+            return ''
+        
+        def get_best_impact(annotations_df):
+            """Get the best available impact"""
+            if len(annotations_df) > 0:
+                impact = annotations_df['impact'].iloc[0]
+                if pd.notna(impact) and impact != '' and impact != '-':
+                    return impact
+            return ''
+        
+        # Apply the improved extraction
+        hg19_gene = get_best_gene(hg19_transcripts_df, hg19_annotations)
+        hg38_gene = get_best_gene(hg38_transcripts_df, hg38_annotations)
+        hg19_consequence = get_best_consequence(hg19_transcripts_df, hg19_annotations)
+        hg38_consequence = get_best_consequence(hg38_transcripts_df, hg38_annotations)
+        hg19_impact = get_best_impact(hg19_annotations)
+        hg38_impact = get_best_impact(hg38_annotations)
         
         # Clinical significance and pathogenicity predictions
-        hg19_clin_sig = hg19_annotations['clin_sig'].iloc[0] if len(hg19_annotations) > 0 else ''
-        hg38_clin_sig = hg38_annotations['clin_sig'].iloc[0] if len(hg38_annotations) > 0 else ''
+        def get_best_clinical_data(annotations_df, column):
+            """Get clinical data with proper handling of missing values"""
+            if len(annotations_df) > 0:
+                value = annotations_df[column].iloc[0]
+                if pd.notna(value) and value != '' and value != '-':
+                    return value
+            return ''
+        
+        hg19_clin_sig = get_best_clinical_data(hg19_annotations, 'clin_sig')
+        hg38_clin_sig = get_best_clinical_data(hg38_annotations, 'clin_sig')
         
         # Normalize clinical significance
         hg19_clin_sig_normalized = normalize_clinical_significance(hg19_clin_sig)
         hg38_clin_sig_normalized = normalize_clinical_significance(hg38_clin_sig)
-        hg19_sift = hg19_annotations['sift'].iloc[0] if len(hg19_annotations) > 0 else ''
-        hg38_sift = hg38_annotations['sift'].iloc[0] if len(hg38_annotations) > 0 else ''
-        hg19_polyphen = hg19_annotations['polyphen'].iloc[0] if len(hg19_annotations) > 0 else ''
-        hg38_polyphen = hg38_annotations['polyphen'].iloc[0] if len(hg38_annotations) > 0 else ''
+        hg19_sift = get_best_clinical_data(hg19_annotations, 'sift')
+        hg38_sift = get_best_clinical_data(hg38_annotations, 'sift')
+        hg19_polyphen = get_best_clinical_data(hg19_annotations, 'polyphen')
+        hg38_polyphen = get_best_clinical_data(hg38_annotations, 'polyphen')
         
         # Parse pathogenicity predictions
         hg19_sift_pred, hg19_sift_score = parse_sift_prediction(hg19_sift)
@@ -292,13 +341,13 @@ class VEPAnalyzer:
         sift_change = ''
         if hg19_sift_pred and hg38_sift_pred and hg19_sift_pred != hg38_sift_pred:
             if (hg19_sift_pred == 'tolerated' and hg38_sift_pred == 'deleterious') or \
-               (hg19_sift_pred == 'deleterious' and hg38_sift_pred == 'tolerated'):
+            (hg19_sift_pred == 'deleterious' and hg38_sift_pred == 'tolerated'):
                 sift_change = f'{hg19_sift_pred.upper()}_TO_{hg38_sift_pred.upper()}'
         
         polyphen_change = ''
         if hg19_polyphen_pred and hg38_polyphen_pred and hg19_polyphen_pred != hg38_polyphen_pred:
             if (hg19_polyphen_pred == 'benign' and hg38_polyphen_pred in ['possibly_damaging', 'probably_damaging']) or \
-               (hg19_polyphen_pred in ['possibly_damaging', 'probably_damaging'] and hg38_polyphen_pred == 'benign'):
+            (hg19_polyphen_pred in ['possibly_damaging', 'probably_damaging'] and hg38_polyphen_pred == 'benign'):
                 polyphen_change = f'{hg19_polyphen_pred.upper()}_TO_{hg38_polyphen_pred.upper()}'
         
         # Store variant VEP analysis (cached part - no scores)
@@ -329,25 +378,25 @@ class VEPAnalyzer:
             'problematic_transcripts_hg19': '; '.join(problematic_transcripts_hg19) if problematic_transcripts_hg19 else '',
             'problematic_transcripts_hg38': '; '.join(problematic_transcripts_hg38) if problematic_transcripts_hg38 else '',
             
-            # Representative VEP information
+            # Representative VEP information (FIXED)
             'hg19_gene': hg19_gene,
             'hg38_gene': hg38_gene,
             'hg19_consequence': hg19_consequence,
             'hg38_consequence': hg38_consequence,
-            'hg19_impact': hg19_impact or '',
-            'hg38_impact': hg38_impact or '',
-            'hg19_clin_sig': hg19_clin_sig or '',
-            'hg38_clin_sig': hg38_clin_sig or '',
+            'hg19_impact': hg19_impact,
+            'hg38_impact': hg38_impact,
+            'hg19_clin_sig': hg19_clin_sig,
+            'hg38_clin_sig': hg38_clin_sig,
             'hg19_clin_sig_normalized': hg19_clin_sig_normalized,
             'hg38_clin_sig_normalized': hg38_clin_sig_normalized,
             'clin_sig_change': clin_sig_change,
             'hg19_gnomad_af': hg19_annotations['gnomadg_af'].iloc[0] if len(hg19_annotations) > 0 else None,
             'hg38_gnomad_af': hg38_annotations['gnomadg_af'].iloc[0] if len(hg38_annotations) > 0 else None,
-            'hg19_sift': hg19_sift or '',
-            'hg38_sift': hg38_sift or '',
+            'hg19_sift': hg19_sift,
+            'hg38_sift': hg38_sift,
             'sift_change': sift_change,
-            'hg19_polyphen': hg19_polyphen or '',
-            'hg38_polyphen': hg38_polyphen or '',
+            'hg19_polyphen': hg19_polyphen,
+            'hg38_polyphen': hg38_polyphen,
             'polyphen_change': polyphen_change,
             
             # Pathogenicity flags

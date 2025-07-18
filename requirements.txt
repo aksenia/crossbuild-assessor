@@ -2,12 +2,12 @@
 pandas>=2.0.0
 numpy>=1.24.0
 
-# Database
-sqlite3  # Usually included with Python, but explicit for clarity
-
 # Visualization
 matplotlib>=3.7.0
 seaborn>=0.12.0
+
+# HTML report generation
+jinja2>=3.1.0
 
 # Scientific computing
 scipy>=1.10.0

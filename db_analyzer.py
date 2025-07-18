@@ -64,6 +64,9 @@ from pathlib import Path
 import numpy as np
 import sys
 
+from utils.summary_utils import SummaryDataCalculator
+import json
+
 # Set visualization style
 plt.style.use('default')
 sns.set_palette("husl")
@@ -746,6 +749,8 @@ NOTE: VEP consequence analysis has been moved to variant_prioritizer.py
                        help='Output directory for results (default: analysis_output)')
     parser.add_argument('--no-plots', action='store_true',
                        help='Skip plot generation (faster for large datasets)')
+    parser.add_argument('--export-json', action='store_true',
+                       help='Export structured results as JSON (optional)') 
     parser.add_argument('--verbose', '-v', action='store_true',
                        help='Enable verbose output')
     
@@ -779,6 +784,17 @@ NOTE: VEP consequence analysis has been moved to variant_prioritizer.py
         
         # Generate comprehensive summary
         generate_comprehensive_report(conn, output_dir)
+
+        # Optional JSON export
+        if args.export_json:
+            print("Exporting structured JSON data...")
+            calculator = SummaryDataCalculator()
+            liftover_data = calculator.calculate_liftover_summary(conn)
+            
+            json_file = output_dir / 'liftover_analysis.json'
+            with open(json_file, 'w') as f:
+                json.dump(liftover_data, f, indent=2, default=str)
+            print(f"✓ JSON data exported to: {json_file}")
         
         conn.close()
         
