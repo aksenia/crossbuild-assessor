@@ -139,7 +139,7 @@ class ReportGenerator:
         self.report_data['images'] = images
     
     def _collect_variant_data(self):
-        """Load variant data for clinical evidence table - FIXED: Ensure top priority variants"""
+        """Load variant data for clinical evidence table - FIXED: Show only variants with actual changes"""
         csv_file = self.input_dir / 'prioritized_variants.csv'
         if csv_file.exists():
             df = pd.read_csv(csv_file)
@@ -149,14 +149,40 @@ class ReportGenerator:
             
             # Top 10 variants with clinical evidence focus
             if len(df) > 0:
-                # FIXED: Ensure we're getting the actual top priority variants
-                # Sort by Priority_Score descending to get highest priority first
+                # FIXED: Filter out variants with no actual changes
+                # Keep only variants that have some kind of change between builds
+                change_columns = [
+                    'Has_Clinical_Change', 'Has_Impact_Change', 'Has_Consequence_Change',
+                    'Clinical_Change_Direction', 'SIFT_Change', 'PolyPhen_Change'
+                ]
+                
+                # Create a mask for variants with any changes
+                has_changes_mask = pd.Series([False] * len(df))
+                
+                for col in change_columns:
+                    if col in df.columns:
+                        if col.startswith('Has_'):
+                            # For Has_* columns, look for 'YES'
+                            has_changes_mask |= (df[col] == 'YES')
+                        else:
+                            # For other change columns, look for non-empty values
+                            has_changes_mask |= (df[col].notna() & (df[col] != '') & (df[col] != 'STABLE'))
+                
+                # Also include variants with high priority scores even if no specific change flags
                 if 'Priority_Score' in df.columns:
-                    df_sorted = df.sort_values('Priority_Score', ascending=False)
-                elif 'Rank' in df.columns:
-                    df_sorted = df.sort_values('Rank', ascending=True)  # Lower rank = higher priority
+                    has_changes_mask |= (df['Priority_Score'] > 5)  # Include high-scoring variants
+                
+                # Filter to variants with changes
+                df_with_changes = df[has_changes_mask]
+                print(f"Filtered to {len(df_with_changes)} variants with actual changes (from {len(df)} total)")
+                
+                # Sort by Priority_Score descending to get highest priority first
+                if 'Priority_Score' in df_with_changes.columns and len(df_with_changes) > 0:
+                    df_sorted = df_with_changes.sort_values('Priority_Score', ascending=False)
+                elif 'Rank' in df_with_changes.columns and len(df_with_changes) > 0:
+                    df_sorted = df_with_changes.sort_values('Rank', ascending=True)  # Lower rank = higher priority
                 else:
-                    df_sorted = df  # Use original order if no sorting column available
+                    df_sorted = df_with_changes  # Use original order if no sorting column available
                 
                 # Select columns for clinical review
                 clinical_columns = [
@@ -171,9 +197,13 @@ class ReportGenerator:
                 available_columns = [col for col in clinical_columns if col in df_sorted.columns]
                 print(f"Using columns: {available_columns}")
                 
-                # Take top 10 highest priority variants
-                top_variants = df_sorted[available_columns].head(10)
-                self.report_data['top_variants'] = top_variants.to_dict('records')
+                # Take top 10 highest priority variants with changes
+                if len(df_sorted) > 0:
+                    top_variants = df_sorted[available_columns].head(10)
+                    self.report_data['top_variants'] = top_variants.to_dict('records')
+                else:
+                    print("No variants with changes found")
+                    self.report_data['top_variants'] = []
             else:
                 self.report_data['top_variants'] = []
     
@@ -384,25 +414,54 @@ class ReportGenerator:
                         </tr>
                     </thead>
                     <tbody>
-                        {% for item in get_summary_value(['prioritization', 'clinical_transitions', 'directional_changes_ordered']) %}
-                        <tr>
-                            <td>{{ item.transition }}</td>
-                            <td>{{ item.count }}</td>
-                            <td>
-                                {% if item.clinical_priority == 'CRITICAL' %}
-                                    <span class="clinical-change">CRITICAL</span>
-                                {% elif item.clinical_priority == 'HIGH' %}
-                                    <span class="clinical-change">HIGH</span>
-                                {% elif item.clinical_priority == 'MODERATE' %}
-                                    <span class="clinical-stable">MODERATE</span>
-                                {% elif item.clinical_priority == 'LOW' %}
-                                    <span class="clinical-stable">LOW</span>
-                                {% else %}
-                                    <span class="clinical-stable">{{ item.clinical_priority }}</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
+                        {% set ordered_changes = get_summary_value(['prioritization', 'clinical_transitions', 'directional_changes_ordered']) %}
+                        {% set regular_changes = get_summary_value(['prioritization', 'clinical_transitions', 'directional_changes']) %}
+                        
+                        {% if ordered_changes and ordered_changes != 'N/A' %}
+                            {% for item in ordered_changes %}
+                            <tr>
+                                <td>{{ item.transition }}</td>
+                                <td>{{ item.count }}</td>
+                                <td>
+                                    {% if item.clinical_priority == 'CRITICAL' %}
+                                        <span class="clinical-change">CRITICAL</span>
+                                    {% elif item.clinical_priority == 'HIGH' %}
+                                        <span class="clinical-change">HIGH</span>
+                                    {% elif item.clinical_priority == 'MODERATE' %}
+                                        <span class="clinical-stable">MODERATE</span>
+                                    {% elif item.clinical_priority == 'LOW' %}
+                                        <span class="clinical-stable">LOW</span>
+                                    {% else %}
+                                        <span class="clinical-stable">{{ item.clinical_priority }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% elif regular_changes and regular_changes != 'N/A' %}
+                            {% for transition, data in regular_changes.items() %}
+                            <tr>
+                                <td>{{ transition }}</td>
+                                <td>{{ data.count }}</td>
+                                <td>
+                                    {% if data.clinical_priority == 'CRITICAL' %}
+                                        <span class="clinical-change">CRITICAL</span>
+                                    {% elif data.clinical_priority == 'HIGH' %}
+                                        <span class="clinical-change">HIGH</span>
+                                    {% elif data.clinical_priority == 'MODERATE' %}
+                                        <span class="clinical-stable">MODERATE</span>
+                                    {% elif data.clinical_priority == 'LOW' %}
+                                        <span class="clinical-stable">LOW</span>
+                                    {% else %}
+                                        <span class="clinical-stable">{{ data.clinical_priority }}</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="3" class="no-data">No clinical significance transitions found</td>
+                            </tr>
+                        {% endif %}
                     </tbody>
                 </table>
             </div>
