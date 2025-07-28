@@ -361,8 +361,10 @@ def parse_vep_variant_id(variant_id):
         tuple: (chromosome, position, ref_allele, alt_allele)
     """
     if pd.isna(variant_id):
+        print(f"DEBUG: variant_id is NaN")
         return None, None, None, None
     
+    print(f"DEBUG: Processing variant_id: '{variant_id}' (type: {type(variant_id)})")
     # Pattern: chr_pos_ref/alt
     pattern = r'^(.+?)_(\d+)_([^/]+)/(.+)$'
     match = re.match(pattern, str(variant_id))
@@ -372,8 +374,10 @@ def parse_vep_variant_id(variant_id):
         pos = int(match.group(2))
         ref = match.group(3)
         alt = match.group(4)
+        print(f"DEBUG: Successfully parsed - chr:{chr_part}, pos:{pos}, ref:{ref}, alt:{alt}")
         return chr_part, pos, ref, alt
     else:
+        print(f"DEBUG: REGEX FAILED for variant_id: '{variant_id}'")
         return None, None, None, None
 
 def load_vep_data(vep_file, db_path, genome_build):
