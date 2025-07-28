@@ -139,7 +139,7 @@ class ReportGenerator:
         self.report_data['images'] = images
     
     def _collect_variant_data(self):
-        """Load variant data for clinical evidence table"""
+        """Load variant data for clinical evidence table - FIXED: Ensure top priority variants"""
         csv_file = self.input_dir / 'prioritized_variants.csv'
         if csv_file.exists():
             df = pd.read_csv(csv_file)
@@ -149,20 +149,30 @@ class ReportGenerator:
             
             # Top 10 variants with clinical evidence focus
             if len(df) > 0:
-                # Select columns for clinical review - let's check what's actually available
+                # FIXED: Ensure we're getting the actual top priority variants
+                # Sort by Priority_Score descending to get highest priority first
+                if 'Priority_Score' in df.columns:
+                    df_sorted = df.sort_values('Priority_Score', ascending=False)
+                elif 'Rank' in df.columns:
+                    df_sorted = df.sort_values('Rank', ascending=True)  # Lower rank = higher priority
+                else:
+                    df_sorted = df  # Use original order if no sorting column available
+                
+                # Select columns for clinical review
                 clinical_columns = [
                     'Rank', 'Chromosome', 'Position_hg19', 'Gene_hg19', 'Gene_hg38',
                     'Clinical_Significance_hg19', 'Clinical_Significance_hg38',
                     'Impact_hg19', 'Impact_hg38',
                     'SIFT_hg19', 'SIFT_hg38', 'PolyPhen_hg19', 'PolyPhen_hg38',
-                    'Consequence_hg19', 'Consequence_hg38'
+                    'Consequence_hg19', 'Consequence_hg38', 'Priority_Score', 'Priority_Category'
                 ]
                 
                 # Only include columns that exist
-                available_columns = [col for col in clinical_columns if col in df.columns]
+                available_columns = [col for col in clinical_columns if col in df_sorted.columns]
                 print(f"Using columns: {available_columns}")
                 
-                top_variants = df[available_columns].head(10)
+                # Take top 10 highest priority variants
+                top_variants = df_sorted[available_columns].head(10)
                 self.report_data['top_variants'] = top_variants.to_dict('records')
             else:
                 self.report_data['top_variants'] = []
@@ -179,8 +189,7 @@ class ReportGenerator:
     
     def _render_html(self):
         """Render HTML using Jinja2 template with clinical focus"""
-        template_str = """
-<!DOCTYPE html>
+        template_str = '''<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -206,9 +215,6 @@ class ReportGenerator:
         th { background: #f8f9fa; font-weight: 600; color: #2c5f8a; }
         .clinical-change { background: #ffebee; color: #c62828; font-weight: bold; }
         .clinical-stable { background: #e8f5e8; color: #2e7d32; }
-        .impact-high { background: #ffebee; color: #c62828; font-weight: bold; }
-        .impact-moderate { background: #fff3e0; color: #ef6c00; }
-        .impact-low { background: #f3e5f5; color: #7b1fa2; }
         .no-data { color: #999; font-style: italic; text-align: center; padding: 20px; }
         .summary-text { background: #f8f9fa; padding: 15px; border-radius: 6px; margin: 15px 0; }
         @media print { body { background: white; } .container { box-shadow: none; } }
@@ -246,21 +252,16 @@ class ReportGenerator:
                     <div class="metric-label">Clinical significance changes</div>
                 </div>
             </div>
+            
             <div class="summary-text">
                 <strong>Key findings:</strong> 
-                {% set total_variants = get_summary_value(['liftover', 'dataset_overview', 'total_variants']) %}
-                {% set position_match = get_summary_value(['liftover', 'dataset_overview', 'position_match_percentage']) %}
-                {% set critical_variants = get_summary_value(['prioritization', 'top_variants_summary', 'critical_variants_distinct']) %}
-                {% set clinical_changes = get_summary_value(['prioritization', 'top_variants_summary', 'clinical_changes_count']) %}
-                
-                {{ position_match }}% of {{ total_variants }} variants show coordinate concordance between liftover tools. 
-                {{ critical_variants }} variants require immediate review due to functional or clinical significance changes.
-                {{ clinical_changes }} variants show clinical significance transitions that may affect interpretation.
+                {{ get_summary_value(['liftover', 'dataset_overview', 'position_match_percentage']) }}% of {{ get_summary_value(['liftover', 'dataset_overview', 'total_variants']) }} variants show coordinate concordance between liftover tools. 
+                {{ get_summary_value(['prioritization', 'top_variants_summary', 'critical_variants_distinct']) }} variants require immediate review due to functional or clinical significance changes.
+                {{ get_summary_value(['prioritization', 'top_variants_summary', 'clinical_changes_count']) }} variants show clinical significance transitions that may affect interpretation.
             </div>
         </div>
 
         <!-- LIFTOVER QUALITY CONTROL -->
-        {% if get_summary_value(['liftover']) %}
         <div class="section">
             <h2>Liftover Quality Control</h2>
             
@@ -284,74 +285,7 @@ class ReportGenerator:
                 </div>
             </div>
 
-            <!-- Tool Performance Table -->
-            {% if get_summary_value(['liftover', 'mapping_status_breakdown']) %}
-            <h3>Mapping status breakdown</h3>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Mapping status</th>
-                            <th>Variant count</th>
-                            <th>Position match rate</th>
-                            <th>Genotype match rate</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for status, data in get_summary_value(['liftover', 'mapping_status_breakdown']).items() %}
-                        <tr>
-                            <td>{{ status }}</td>
-                            <td>{{ data.count }}</td>
-                            <td>{{ data.pos_match_percentage }}%</td>
-                            <td>{{ data.gt_match_percentage }}%</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-
-            <!-- Match Categories -->
-            {% if get_summary_value(['liftover', 'match_categories']) %}
-            <h3>Variant match categories</h3>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Match category</th>
-                            <th>Count</th>
-                            <th>Percentage</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% set match_categories = get_summary_value(['liftover', 'match_categories']) %}
-                        <tr>
-                            <td>Both match</td>
-                            <td>{{ match_categories.both_match.count }}</td>
-                            <td>{{ match_categories.both_match.percentage }}%</td>
-                        </tr>
-                        <tr>
-                            <td>Position only</td>
-                            <td>{{ match_categories.position_only.count }}</td>
-                            <td>{{ match_categories.position_only.percentage }}%</td>
-                        </tr>
-                        <tr>
-                            <td>Genotype only</td>
-                            <td>{{ match_categories.genotype_only.count }}</td>
-                            <td>{{ match_categories.genotype_only.percentage }}%</td>
-                        </tr>
-                        <tr>
-                            <td>Both mismatch</td>
-                            <td>{{ match_categories.both_mismatch.count }}</td>
-                            <td>{{ match_categories.both_mismatch.percentage }}%</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-            {% endif %}
-
-            <!-- Flip/Swap Analysis -->
-            {% if get_summary_value(['liftover', 'flip_swap_analysis']) %}
+            <!-- STRAND FLIP SWAP ANALYSIS -->
             <h3>Strand flip & allele swap analysis</h3>
             <div class="table-container">
                 <table>
@@ -372,12 +306,14 @@ class ReportGenerator:
                                     Variants lifted successfully without modifications
                                 {% elif category == "Strand Flip Only" %}
                                     Strand orientation corrected during liftover
-                                {% elif category == "Allele Swap Only" %}
-                                    REF/ALT alleles swapped to match reference
-                                {% elif category == "Strand Flip + Allele Swap" %}
-                                    Both strand and allele corrections applied
-                                {% elif category == "Swap Failed (Ambiguous)" %}
+                                {% elif category == "Allele Swap Successful" %}
+                                    REF and ALT alleles were swapped to match reference genome
+                                {% elif category == "Strand Flip + Allele Swap Successful" %}
+                                    Both strand flip and allele swap occurred successfully
+                                {% elif category == "Allele Swap Failed" %}
                                     Allele swap attempted but failed due to ambiguous alleles
+                                {% elif category == "Strand Flip + Allele Swap Failed" %}
+                                    Strand flip occurred but allele swap failed due to ambiguous alleles
                                 {% else %}
                                     {{ category }}
                                 {% endif %}
@@ -387,9 +323,8 @@ class ReportGenerator:
                     </tbody>
                 </table>
             </div>
-            {% endif %}
 
-            <!-- Liftover QC Plots -->
+            <!-- LIFTOVER PLOTS -->
             {% if images.liftover_analysis %}
             <h3>Quality control visualizations</h3>
             <div class="plot-container">
@@ -403,27 +338,30 @@ class ReportGenerator:
             </div>
             {% endif %}
         </div>
-        {% endif %}
 
-        <!-- VARIANT PRIORITIZATION -->
-        {% if get_summary_value(['prioritization']) %}
+        <!-- VARIANT BUILD ANNOTATIONS COMPARISON -->
         <div class="section">
-            <h2>Variant Prioritization Analysis</h2>
+            <h2>Variant build annotations comparison</h2>
             
             <h3>Priority distribution</h3>
+            <div class="summary-text">
+                <strong>Priority definitions:</strong>
+                <strong>CRITICAL:</strong> Clinical interpretation changes or high impact transitions requiring immediate review |
+                <strong>HIGH:</strong> Functionally significant changes needing priority review |
+                <strong>MODERATE:</strong> Prediction changes and gene annotation changes for standard review |
+                <strong>LOW:</strong> Technical issues and annotation differences for secondary review |
+                <strong>INVESTIGATE:</strong> Unclear cases requiring further investigation
+            </div>
             <div class="metrics-grid">
-                {% if get_summary_value(['prioritization', 'priority_distribution']) %}
                 {% for category, count in get_summary_value(['prioritization', 'priority_distribution']).items() %}
                 <div class="metric-card">
                     <div class="metric-value">{{ count }}</div>
                     <div class="metric-label">{{ category }} priority</div>
                 </div>
                 {% endfor %}
-                {% endif %}
             </div>
 
-            <!-- Clinical Significance Transitions -->
-            {% if get_summary_value(['prioritization', 'clinical_transitions']) %}
+            <!-- CLINICAL SIGNIFICANCE TRANSITIONS -->
             <h3>Clinical significance transitions (hg19→hg38)</h3>
             <div class="metrics-grid">
                 <div class="metric-card">
@@ -436,7 +374,6 @@ class ReportGenerator:
                 </div>
             </div>
             
-            {% if get_summary_value(['prioritization', 'clinical_transitions', 'directional_changes']) %}
             <div class="table-container">
                 <table>
                     <thead>
@@ -447,21 +384,21 @@ class ReportGenerator:
                         </tr>
                     </thead>
                     <tbody>
-                        {% for transition, data in get_summary_value(['prioritization', 'clinical_transitions', 'directional_changes']).items() %}
+                        {% for item in get_summary_value(['prioritization', 'clinical_transitions', 'directional_changes_ordered']) %}
                         <tr>
-                            <td>{{ transition }}</td>
-                            <td>{{ data.count }}</td>
+                            <td>{{ item.transition }}</td>
+                            <td>{{ item.count }}</td>
                             <td>
-                                {% if data.clinical_priority == 'CRITICAL' %}
+                                {% if item.clinical_priority == 'CRITICAL' %}
                                     <span class="clinical-change">CRITICAL</span>
-                                {% elif data.clinical_priority == 'HIGH' %}
+                                {% elif item.clinical_priority == 'HIGH' %}
                                     <span class="clinical-change">HIGH</span>
-                                {% elif data.clinical_priority == 'MODERATE' %}
+                                {% elif item.clinical_priority == 'MODERATE' %}
                                     <span class="clinical-stable">MODERATE</span>
-                                {% elif data.clinical_priority == 'LOW' %}
+                                {% elif item.clinical_priority == 'LOW' %}
                                     <span class="clinical-stable">LOW</span>
                                 {% else %}
-                                    <span class="clinical-stable">{{ data.clinical_priority }}</span>
+                                    <span class="clinical-stable">{{ item.clinical_priority }}</span>
                                 {% endif %}
                             </td>
                         </tr>
@@ -469,10 +406,8 @@ class ReportGenerator:
                     </tbody>
                 </table>
             </div>
-            {% endif %}
-            {% endif %}
 
-            <!-- Prioritization Plots -->
+            <!-- PRIORITIZATION PLOTS -->
             {% if images.prioritization_plots %}
             <h3>Prioritization visualizations</h3>
             <div class="plot-container">
@@ -480,28 +415,40 @@ class ReportGenerator:
             </div>
             {% endif %}
         </div>
-        {% endif %}
 
         <!-- TOP PRIORITY VARIANTS -->
         {% if top_variants %}
         <div class="section">
             <h2>Top priority variants</h2>
+            <p><em>Showing the highest priority variants ordered by priority score (most critical first)</em></p>
             <div class="table-container">
                 <table>
                     <thead>
                         <tr>
+                            <th>Priority</th>
                             <th>Location</th>
                             <th>Gene hg19</th>
                             <th>Gene hg38</th>
                             <th>Clinical significance</th>
                             <th>Impact level</th>
-                            <th>Pathogenicity predictions</th>
                             <th>Consequence</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for variant in top_variants %}
                         <tr>
+                            <td>
+                                {% if variant.get('Priority_Category') %}
+                                    <span class="{% if variant.Priority_Category == 'CRITICAL' %}clinical-change{% else %}clinical-stable{% endif %}">
+                                        {{ variant.Priority_Category }}
+                                    </span>
+                                    {% if variant.get('Priority_Score') %}
+                                        <br><small>({{ variant.Priority_Score }})</small>
+                                    {% endif %}
+                                {% else %}
+                                    {{ variant.get('Rank', 'N/A') }}
+                                {% endif %}
+                            </td>
                             <td>{{ variant.get('Chromosome', 'N/A') }}:{{ variant.get('Position_hg19', 'N/A') }}</td>
                             <td>{{ variant.get('Gene_hg19', 'N/A') }}</td>
                             <td>{{ variant.get('Gene_hg38', 'N/A') }}</td>
@@ -524,28 +471,6 @@ class ReportGenerator:
                                 {% endif %}
                             </td>
                             <td>
-                                {% set hg19_sift = variant.get('SIFT_hg19', '') %}
-                                {% set hg38_sift = variant.get('SIFT_hg38', '') %}
-                                {% set hg19_polyphen = variant.get('PolyPhen_hg19', '') %}
-                                {% set hg38_polyphen = variant.get('PolyPhen_hg38', '') %}
-                                
-                                {% if hg19_sift and hg38_sift and hg19_sift != hg38_sift %}
-                                    SIFT: {{ hg19_sift }} → {{ hg38_sift }}<br>
-                                {% elif hg19_sift %}
-                                    SIFT: {{ hg19_sift }}<br>
-                                {% endif %}
-                                
-                                {% if hg19_polyphen and hg38_polyphen and hg19_polyphen != hg38_polyphen %}
-                                    PolyPhen: {{ hg19_polyphen }} → {{ hg38_polyphen }}
-                                {% elif hg19_polyphen %}
-                                    PolyPhen: {{ hg19_polyphen }}
-                                {% endif %}
-                                
-                                {% if not (hg19_sift or hg19_polyphen) %}
-                                    N/A
-                                {% endif %}
-                            </td>
-                            <td>
                                 {% set hg19_consequence = variant.get('Consequence_hg19', 'N/A') %}
                                 {% set hg38_consequence = variant.get('Consequence_hg38', 'N/A') %}
                                 {% if hg19_consequence != hg38_consequence %}
@@ -563,11 +488,9 @@ class ReportGenerator:
         {% endif %}
 
         <!-- DATA COVERAGE ANALYSIS -->
-        {% if get_summary_value(['prioritization', 'clinical_coverage']) %}
         <div class="section">
             <h2>Data coverage analysis</h2>
             
-            {% if get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations']) %}
             <h3>Evidence distribution by build</h3>
             <div class="metrics-grid">
                 <div class="metric-card">
@@ -580,8 +503,7 @@ class ReportGenerator:
                 </div>
             </div>
             
-            {% set build_comparison = get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'build_comparison']) %}
-            {% if build_comparison %}
+            <!-- Show basic clinical categories if detailed data not available -->
             <div class="table-container">
                 <table>
                     <thead>
@@ -589,35 +511,33 @@ class ReportGenerator:
                             <th>Category</th>
                             <th>hg19 count</th>
                             <th>hg38 count</th>
-                            <th>Net change</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for category, data in build_comparison.items() %}
-                        {% if data.hg19_count > 0 or data.hg38_count > 0 %}
                         <tr>
-                            <td>{{ category }}</td>
-                            <td>{{ data.hg19_count }}</td>
-                            <td>{{ data.hg38_count }}</td>
-                            <td>
-                                {% if data.difference > 0 %}
-                                    +{{ data.difference }}
-                                {% elif data.difference < 0 %}
-                                    {{ data.difference }}
-                                {% else %}
-                                    0
-                                {% endif %}
-                            </td>
+                            <td>PATHOGENIC</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'PATHOGENIC'], 0) }}</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'PATHOGENIC'], 0) }}</td>
                         </tr>
-                        {% endif %}
-                        {% endfor %}
+                        <tr>
+                            <td>BENIGN</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'BENIGN'], 0) }}</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'BENIGN'], 0) }}</td>
+                        </tr>
+                        <tr>
+                            <td>VUS</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'VUS'], 0) }}</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'VUS'], 0) }}</td>
+                        </tr>
+                        <tr>
+                            <td>NONE</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'NONE'], 0) }}</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'NONE'], 0) }}</td>
+                        </tr>
                     </tbody>
                 </table>
             </div>
-            {% endif %}
-            {% endif %}
         </div>
-        {% endif %}
 
         <!-- TECHNICAL NOTES -->
         <div class="section">
@@ -627,24 +547,14 @@ class ReportGenerator:
                 <p><strong>Evidence-first scoring:</strong> Prioritizes clinical significance changes over annotation differences between builds</p>
                 <p><strong>Priority categories:</strong> CRITICAL (immediate review) → HIGH (priority review) → MODERATE (standard review) → LOW (secondary review)</p>
                 <p><strong>Quality control:</strong> Liftover concordance analysis compares CrossMap and bcftools coordinate conversion results</p>
-                
-                {% if get_summary_value(['prioritization', 'metadata', 'timestamp']) %}
-                <p><strong>Analysis timestamp:</strong> {{ get_summary_value(['prioritization', 'metadata', 'timestamp']) }}</p>
-                {% endif %}
-                {% if get_summary_value(['liftover', 'metadata', 'timestamp']) %}
-                <p><strong>Liftover analysis:</strong> {{ get_summary_value(['liftover', 'metadata', 'timestamp']) }}</p>
-                {% endif %}
-                
                 <p><strong>For complete details:</strong> Refer to the accompanying summary text files and CSV output for comprehensive analysis results.</p>
             </div>
         </div>
     </div>
 </body>
-</html>
-        """
+</html>'''
         
         template = Template(template_str)
-        # Add only the data access helper function
         template.globals['get_summary_value'] = self._get_summary_value
         return template.render(**self.report_data)
 

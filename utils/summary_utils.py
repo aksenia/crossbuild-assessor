@@ -26,13 +26,8 @@ class SummaryDataCalculator:
             SELECT AVG(gt_match) as rate FROM comparison
         """, conn).iloc[0]['rate']
         
-        # FIXED: Calculate concordant/discordant correctly
-        # Concordant = both position AND genotype match
-        concordant_query = """
-            SELECT COUNT(*) as count FROM comparison 
-            WHERE pos_match = 1 AND gt_match = 1
-        """
-        concordant_variants = pd.read_sql_query(concordant_query, conn).iloc[0]['count']
+        # For liftover QC, concordant = position match (primary concern)
+        concordant_variants = int(pos_match_rate * total_variants) if pos_match_rate else 0
         discordant_variants = total_variants - concordant_variants
         
         # Calculate percentages
@@ -87,23 +82,35 @@ class SummaryDataCalculator:
         
         flip_swap_df = pd.read_sql_query(flip_swap_query, conn)
         
-        # Clean up flip/swap category names
+        # FIXED: Clean flip/swap category names with descriptive labels
         def clean_flip_swap_category(flip, swap):
+            """Convert raw flip/swap values to descriptive category names"""
             flip_clean = str(flip).lower() if pd.notna(flip) else 'none'
             swap_clean = str(swap).lower() if pd.notna(swap) else 'none'
             
-            if flip_clean == 'no_flip' and swap_clean == 'none':
+            # Handle float values that might be stored as strings
+            if swap_clean in ['1.0', '1']:
+                swap_clean = '1'
+            elif swap_clean in ['-1.0', '-1']:
+                swap_clean = '-1'
+            elif swap_clean in ['na', 'none', 'nan']:
+                swap_clean = 'na'
+            
+            # Create descriptive category names
+            if flip_clean == 'no_flip' and swap_clean == 'na':
                 return "No Changes Required"
-            elif flip_clean == 'flip' and swap_clean == 'none':
+            elif flip_clean == 'flip' and swap_clean == 'na':
                 return "Strand Flip Only"
             elif flip_clean == 'no_flip' and swap_clean == '1':
-                return "Allele Swap Only"
+                return "Allele Swap Successful"
             elif flip_clean == 'flip' and swap_clean == '1':
-                return "Strand Flip + Allele Swap"
-            elif swap_clean == '-1':
-                return "Swap Failed (Ambiguous)"
+                return "Strand Flip + Allele Swap Successful"
+            elif flip_clean == 'no_flip' and swap_clean == '-1':
+                return "Allele Swap Failed"
+            elif flip_clean == 'flip' and swap_clean == '-1':
+                return "Strand Flip + Allele Swap Failed"
             else:
-                return f"Other ({flip_clean}_{swap_clean})"
+                return f"Other Configuration ({flip_clean}, {swap_clean})"
         
         flip_swap_cleaned = {}
         for _, row in flip_swap_df.iterrows():
@@ -237,19 +244,35 @@ class SummaryDataCalculator:
                     else:
                         return 'MODERATE'
                 
-                directional_changes = {}
+                # FIXED: Create ordered list of directional changes
+                directional_changes_list = []
                 for (hg19_cat, hg38_cat), count in transition_counts.items():
                     clinical_priority = get_clinical_priority(hg19_cat, hg38_cat)
-                    directional_changes[f"{hg19_cat}→{hg38_cat}"] = {
+                    directional_changes_list.append({
+                        "transition": f"{hg19_cat}→{hg38_cat}",
                         "count": count,
                         "clinical_priority": clinical_priority
+                    })
+                
+                # Sort by priority (CRITICAL first), then by count (descending)
+                priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MODERATE': 2, 'LOW': 3}
+                directional_changes_list.sort(key=lambda x: (priority_order.get(x['clinical_priority'], 4), -x['count']))
+                
+                # Convert to dictionary for compatibility
+                directional_changes = {
+                    item['transition']: {
+                        "count": item['count'],
+                        "clinical_priority": item['clinical_priority']
                     }
+                    for item in directional_changes_list
+                }
             else:
                 directional_changes = {}
             
             clinical_transitions = {
                 "stable_annotations": stable_counts,
                 "directional_changes": directional_changes,
+                "directional_changes_ordered": directional_changes_list,  # For ordered display
                 "total_stable": len(stable_variants),
                 "total_changing": len(changing_variants)
             }
@@ -275,21 +298,35 @@ class SummaryDataCalculator:
         # Clinical coverage analysis - FIXED prediction coverage calculation
         clinical_coverage = {}
         if len(df_full) > 0 and 'hg19_clin_sig_normalized' in df_full.columns:
-            # Build-specific counts
+            # Build-specific counts with ordered categories
             hg19_counts = df_full['hg19_clin_sig_normalized'].value_counts().to_dict()
             hg38_counts = df_full['hg38_clin_sig_normalized'].value_counts().to_dict()
             
-            # Calculate differences between builds
-            all_categories = set(hg19_counts.keys()) | set(hg38_counts.keys())
-            build_comparison = {}
-            for category in all_categories:
+            # FIXED: Order categories by clinical interest
+            category_order = ['PATHOGENIC', 'BENIGN', 'VUS', 'RISK', 'DRUG_RESPONSE', 'PROTECTIVE', 'OTHER', 'NONE']
+            
+            # Calculate differences between builds in order
+            build_comparison_ordered = []
+            for category in category_order:
                 hg19_count = hg19_counts.get(category, 0)
                 hg38_count = hg38_counts.get(category, 0)
-                build_comparison[category] = {
-                    "hg19_count": hg19_count,
-                    "hg38_count": hg38_count,
-                    "difference": hg38_count - hg19_count
+                if hg19_count > 0 or hg38_count > 0:  # Only include categories with data
+                    build_comparison_ordered.append({
+                        "category": category,
+                        "hg19_count": hg19_count,
+                        "hg38_count": hg38_count,
+                        "difference": hg38_count - hg19_count
+                    })
+            
+            # Also create dictionary for backward compatibility
+            build_comparison = {
+                item["category"]: {
+                    "hg19_count": item["hg19_count"],
+                    "hg38_count": item["hg38_count"],
+                    "difference": item["difference"]
                 }
+                for item in build_comparison_ordered
+            }
             
             # Overall coverage
             has_hg19_clin = (df_full['hg19_clin_sig_normalized'] != 'NONE').sum()
@@ -298,7 +335,6 @@ class SummaryDataCalculator:
                            (df_full['hg38_clin_sig_normalized'] != 'NONE')).sum()
             
             # FIXED: Pathogenicity predictions - properly exclude missing values including "-"
-            # Count variants that have SIFT OR PolyPhen data in EITHER build (excluding '-' and empty)
             has_sift_hg19 = (df_full['hg19_sift'] != '') & (df_full['hg19_sift'] != '-') & (df_full['hg19_sift'].notna())
             has_sift_hg38 = (df_full['hg38_sift'] != '') & (df_full['hg38_sift'] != '-') & (df_full['hg38_sift'].notna())
             has_polyphen_hg19 = (df_full['hg19_polyphen'] != '') & (df_full['hg19_polyphen'] != '-') & (df_full['hg19_polyphen'].notna())
@@ -320,6 +356,7 @@ class SummaryDataCalculator:
                     "hg19_with_annotations": has_hg19_clin,
                     "hg38_with_annotations": has_hg38_clin,
                     "build_comparison": build_comparison,
+                    "build_comparison_ordered": build_comparison_ordered,  # For ordered display
                     "hg19_distribution": hg19_counts,
                     "hg38_distribution": hg38_counts
                 },
@@ -348,7 +385,7 @@ class SummaryDataCalculator:
         # Top variants summary
         top_variants_summary = {}
         if len(df_excel) > 0:
-            # Count DISTINCT variants with critical issues (not sum of issue types)
+            # Count DISTINCT variants with critical issues
             critical_variants_mask = (
                 (df_full['same_transcript_consequence_changes'] > 0) | 
                 (df_full['clin_sig_change'].isin(['BENIGN_TO_PATHOGENIC', 'PATHOGENIC_TO_BENIGN', 'VUS_TO_PATHOGENIC']))
@@ -366,7 +403,7 @@ class SummaryDataCalculator:
                 "avg_priority_score": round(df_excel['Priority_Score'].mean(), 1) if 'Priority_Score' in df_excel.columns else 0,
                 "max_priority_score": round(df_excel['Priority_Score'].max(), 1) if 'Priority_Score' in df_excel.columns else 0,
                 "clinical_changes_count": len(df_excel[df_excel['Has_Clinical_Change'] == 'YES']) if 'Has_Clinical_Change' in df_excel.columns else 0,
-                "critical_variants_distinct": critical_variants_count  # FIXED: distinct count
+                "critical_variants_distinct": critical_variants_count
             }
         
         return {
