@@ -237,18 +237,35 @@ class VEPAnalyzer:
                 for tx_id in hg38_by_consequence[consequence]:
                     remaining_hg38.pop(tx_id, None)
             
-            # Strategy 3: Count unmatched consequences
+            # Strategy 3: Count unmatched consequences - UPDATED to use VEP hierarchy
             unmatched_hg19_consequences = set(data['consequence'] for data in remaining_hg19.values())
             unmatched_hg38_consequences = set(data['consequence'] for data in remaining_hg38.values())
-            
+
             if len(unmatched_hg19_consequences) > 0 or len(unmatched_hg38_consequences) > 0:
-                unmatched_consequences = 1
+                # Import VEP consequence hierarchy
+                from config.constants import VEP_CONSEQUENCE_IMPACT
                 
-                # Add unmatched transcripts to problematic lists
-                for tx_id, data in remaining_hg19.items():
-                    problematic_transcripts_hg19.append(f"{data['feature_id']}({data['consequence']})")
-                for tx_id, data in remaining_hg38.items():
-                    problematic_transcripts_hg38.append(f"{data['feature_id']}({data['consequence']})")
+                # Get impact levels for unmatched consequences
+                unmatched_hg19_impacts = {VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') 
+                                        for cons in unmatched_hg19_consequences}
+                unmatched_hg38_impacts = {VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') 
+                                        for cons in unmatched_hg38_consequences}
+                
+                # Only flag as significant if HIGH/MODERATE consequences are involved
+                significant_impacts = {'HIGH', 'MODERATE'}
+                has_significant_unmatched = (
+                    any(impact in significant_impacts for impact in unmatched_hg19_impacts) or
+                    any(impact in significant_impacts for impact in unmatched_hg38_impacts)
+                )
+                
+                unmatched_consequences = 1 if has_significant_unmatched else 0
+                
+                # Add to problematic transcripts only if significant
+                if has_significant_unmatched:
+                    for tx_id, data in remaining_hg19.items():
+                        problematic_transcripts_hg19.append(f"{data['feature_id']}({data['consequence']})")
+                    for tx_id, data in remaining_hg38.items():
+                        problematic_transcripts_hg38.append(f"{data['feature_id']}({data['consequence']})")
         
         # FIXED: Get representative VEP information with proper fallbacks
         # Priority: transcript data > any annotation data > empty string

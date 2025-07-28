@@ -376,11 +376,10 @@ class ReportGenerator:
             <h3>Priority distribution</h3>
             <div class="summary-text">
                 <strong>Priority definitions:</strong>
-                <strong>CRITICAL:</strong> Clinical interpretation changes or high impact transitions requiring immediate review |
-                <strong>HIGH:</strong> Functionally significant changes needing priority review |
-                <strong>MODERATE:</strong> Prediction changes and gene annotation changes for standard review |
-                <strong>LOW:</strong> Technical issues and annotation differences for secondary review |
-                <strong>INVESTIGATE:</strong> Unclear cases requiring further investigation
+                <strong>CRITICAL:</strong> Clinical interpretation changes or high impact transitions |
+                <strong>HIGH:</strong> Functionally significant changes |
+                <strong>MODERATE:</strong> Pathogenicity prediction changes |
+                <strong>LOW:</strong> Technical issues, annotation differences, and gene symbol changes
             </div>
             <div class="metrics-grid">
                 {% for category, count in get_summary_value(['prioritization', 'priority_distribution']).items() %}

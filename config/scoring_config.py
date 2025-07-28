@@ -67,7 +67,7 @@ BASE_SCORES = {
 }
 
 # REDESIGNED: Priority categories with clinical focus
-PRIORITY_CATEGORIES = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'INVESTIGATE']
+PRIORITY_CATEGORIES = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW']
 
 # UPDATED: Category determination rules
 PRIORITY_RULES = {
@@ -80,15 +80,11 @@ PRIORITY_RULES = {
         'condition': 'moderate_impact_transitions OR other_clinical_changes OR same_transcript_changes'
     },
     'MODERATE': {
-        'description': 'Prediction changes and clinically relevant gene changes',
-        'condition': 'pathogenicity_prediction_changes OR clinically_relevant_gene_changes'
+        'description': 'Pathogenicity prediction changes (SIFT/PolyPhen)',
+        'condition': 'pathogenicity_prediction_changes'
     },
     'LOW': {
-        'description': 'Technical issues and annotation differences',
-        'condition': 'annotation_differences OR liftover_technical_issues'
-    },
-    'INVESTIGATE': {
-        'description': 'Unclear cases requiring further review',
-        'condition': 'insufficient_clinical_context OR mixed_evidence'
+        'description': 'Technical issues, annotation differences, and gene symbol changes',
+        'condition': 'annotation_differences OR liftover_technical_issues OR gene_symbol_changes'
     }
 }

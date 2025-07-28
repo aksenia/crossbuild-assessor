@@ -154,27 +154,47 @@ class ClinicalScorer:
                 priority_score *= self.clinical_override['benign_reduction_factor']
             elif has_pathogenic_evidence:
                 priority_score *= self.clinical_override['pathogenic_boost_factor']
-            
-            # REDESIGNED: Priority category determination with clinical focus
+
+
+            # REDESIGNED: Priority category determination (4 categories only)
             has_critical_clinical_change = clin_change in ['BENIGN_TO_PATHOGENIC', 'PATHOGENIC_TO_BENIGN'] or clin_change.startswith('VUS_TO_PATHOGENIC')
             has_high_impact_transition = (row['impact_changes'] > 0 and is_clinically_significant and 
                                         'HIGH' in [hg19_impact, hg38_impact])
-            
+
+            # Define clinically concerning changes (not reassuring ones)
+            concerning_clinical_changes = [
+                'VUS_TO_PATHOGENIC', 'NONE_TO_PATHOGENIC', 'BENIGN_TO_VUS', 
+                'PATHOGENIC_TO_VUS', 'VUS_TO_RISK', 'BENIGN_TO_RISK'
+            ]
+
             if has_critical_clinical_change or has_high_impact_transition:
                 priority_category = 'CRITICAL'
             elif (row['impact_changes'] > 0 and is_clinically_significant) or \
-                 (row['clin_sig_change'] and 'TO' in str(row['clin_sig_change']) and not row['clin_sig_change'].startswith('STABLE_')) or \
-                 row['same_transcript_consequence_changes'] > 0:
+                (row['clin_sig_change'] in concerning_clinical_changes) or \
+                row['same_transcript_consequence_changes'] > 0:
                 priority_category = 'HIGH'
-            elif row['sift_change'] or row['polyphen_change'] or \
-                 (row['gene_changes'] > 0 and (is_clinically_significant or row['clin_sig_change'] or row['sift_change'] or row['polyphen_change'])):
+            elif row['sift_change'] or row['polyphen_change']:
                 priority_category = 'MODERATE'
-            elif is_benign_variant or \
-                 (row['unmatched_consequences'] > 0 and not (row['clin_sig_change'] or row['sift_change'] or row['polyphen_change'])):
-                priority_category = 'LOW'
             else:
-                priority_category = 'INVESTIGATE'
-            
+                priority_category = 'LOW'
+
+            # Clinical evidence override - STABLE clinical significance downgrades HIGH to MODERATE  
+            has_stable_clinical_significance = (
+                row['clin_sig_change'].startswith('STABLE_') if row['clin_sig_change'] else False
+            )
+
+            if has_stable_clinical_significance and priority_category == 'HIGH':
+                priority_category = 'MODERATE'
+
+            # CATEGORY-BASED SCORE MULTIPLIERS - Ensure consistent ordering
+            category_multipliers = {
+                'CRITICAL': 1000, 
+                'HIGH': 200, 
+                'MODERATE': 5, 
+                'LOW': 1
+            }
+            final_priority_score = int(round(priority_score * category_multipliers[priority_category]))
+
             # Create summary of discordance types (updated priorities)
             discordance_summary = []
             if has_critical_clinical_change:
@@ -201,12 +221,12 @@ class ClinicalScorer:
                 discordance_summary.append(f"Genotype mismatch")
             
             # Only include variants with discordances (score > 0)
-            if priority_score == 0:
+            if final_priority_score == 0:
                 continue
             
             # Add calculated fields to the row
             variant_info = row.to_dict()
-            variant_info['priority_score'] = priority_score
+            variant_info['priority_score'] = final_priority_score
             variant_info['priority_category'] = priority_category
             variant_info['discordance_summary'] = '; '.join(discordance_summary) if discordance_summary else 'Technical issues only'
             
