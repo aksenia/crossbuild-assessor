@@ -295,15 +295,14 @@ class PrioritizationPlotter:
             
             # Order categories by clinical importance
             discordance_order = [
+                'CRITICAL Clinical\nSignificance Change',
+                'Clinical\nSignificance Change', 
                 'Same Transcript\nConsequence Change',
-                'Clinical Significance\nChange',
+                'Disjoint Functional\nConsequences',
                 'Impact Level\nChange',
-                'Gene Annotation\nChange',
                 'Pathogenicity\nPrediction Change',
-                'Unmatched\nConsequences',
-                'Position\nMismatch',
-                'Genotype\nMismatch',
-                'Other/Multiple'
+                'Technical/Annotation\nIssues',
+                'Other'
             ]
             
             discordance_counts = discordance_counts.reindex([cat for cat in discordance_order if cat in discordance_counts.index])
@@ -328,30 +327,33 @@ class PrioritizationPlotter:
             ax.set_title('Variants by Primary Discordance Type\n(Functional Changes)', fontsize=12, fontweight='bold')
     
     def _categorize_discordance_primary(self, summary):
-        """Categorize discordance without numbers for aggregation"""
+        """Categorize discordance with combined low-priority categories for visual clarity"""
         if pd.isna(summary) or summary == '':
             return 'Other'
         
         summary_lower = summary.lower()
         
-        if 'same transcript consequence' in summary_lower:
+        # PRIORITY ORDER: Clinical impact first (highest priority)
+        if 'critical clinical significance' in summary_lower:
+            return 'CRITICAL Clinical\nSignificance Change'
+        elif 'clinical significance' in summary_lower:
+            return 'Clinical\nSignificance Change'
+        elif 'same transcript consequence' in summary_lower:
             return 'Same Transcript\nConsequence Change'
-        elif 'gene annotation' in summary_lower:
-            return 'Gene Annotation\nChange'
+        elif 'disjoint functional consequences' in summary_lower:
+            return 'Disjoint Functional\nConsequences'
         elif 'impact level' in summary_lower:
             return 'Impact Level\nChange'
-        elif 'clinical significance' in summary_lower:
-            return 'Clinical Significance\nChange'
-        elif 'sift change' in summary_lower or 'polyphen change' in summary_lower:
+        elif 'sift prediction change' in summary_lower or 'polyphen prediction change' in summary_lower:
             return 'Pathogenicity\nPrediction Change'
-        elif 'unmatched consequences' in summary_lower:
-            return 'Unmatched\nConsequences'
-        elif 'position mismatch' in summary_lower:
-            return 'Position\nMismatch'
-        elif 'genotype mismatch' in summary_lower:
-            return 'Genotype\nMismatch'
+        elif any(term in summary_lower for term in [
+            'gene symbol changes', 'consequence subset', 'consequence subset relationship',
+            'position mismatch', 'genotype mismatch', 'annotation noise',
+            'partial consequence overlap', 'same consequence, different transcripts'
+        ]):
+            return 'Technical/Annotation\nIssues'
         else:
-            return 'Other/Multiple'
+            return 'Technical/Annotation\nIssues' 
     
     def _print_summary_statistics(self, df, conn):
         """Print enhanced summary statistics"""

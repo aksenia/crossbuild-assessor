@@ -89,8 +89,14 @@ class ClinicalScorer:
                     # Gene change likely annotation synonym - minimal weight
                     priority_score += row['gene_changes'] * self.base_scores['gene_changes_minimal_weight']
             
-            # LOW: Annotation differences (DEMOTED - reduced weights)
-            priority_score += row['unmatched_consequences'] * self.base_scores['unmatched_consequences']
+            # LOW: Annotation differences (DEMOTED - reduced weights) 
+            consequence_relationship = row.get('consequence_relationship', 'matched')
+            if consequence_relationship == 'disjoint_consequences':
+                priority_score += self.base_scores['disjoint_consequences']
+            elif consequence_relationship == 'partial_overlap_consequences':
+                priority_score += self.base_scores['partial_overlap_consequences']
+            # subset consequences and matched get 0 points
+            
             priority_score += row['same_consequence_different_transcripts'] * self.base_scores['same_consequence_different_transcripts']
             
             # Technical liftover issues (unchanged)
@@ -173,7 +179,8 @@ class ClinicalScorer:
                 (row['clin_sig_change'] in concerning_clinical_changes) or \
                 row['same_transcript_consequence_changes'] > 0:
                 priority_category = 'HIGH'
-            elif row['sift_change'] or row['polyphen_change']:
+            elif row['sift_change'] or row['polyphen_change'] or \
+                row.get('consequence_relationship') == 'disjoint_consequences':
                 priority_category = 'MODERATE'
             else:
                 priority_category = 'LOW'
@@ -195,34 +202,42 @@ class ClinicalScorer:
             }
             final_priority_score = int(round(priority_score * category_multipliers[priority_category]))
 
-            # Create summary of discordance types (updated priorities)
+            # Create summary of discordance types (prioritized by clinical significance)
             discordance_summary = []
+
+            # CRITICAL level discordances (highest priority)
             if has_critical_clinical_change:
                 discordance_summary.append(f"CRITICAL clinical significance change: {row['clin_sig_change']}")
             if has_high_impact_transition:
                 discordance_summary.append(f"CRITICAL impact transition: {hg19_impact}→{hg38_impact}")
+
+            # HIGH level discordances
             if row['same_transcript_consequence_changes'] > 0:
                 discordance_summary.append(f"Same transcript consequence changes: {row['same_transcript_consequence_changes']}")
             if row['impact_changes'] > 0 and is_clinically_significant:
                 discordance_summary.append(f"Impact level changes: {row['impact_changes']}")
-            if row['gene_changes'] > 0:
-                discordance_summary.append(f"Gene annotation changes: {row['gene_changes']}")
+
+            # MODERATE level discordances  
             if row['sift_change']:
-                discordance_summary.append(f"SIFT change: {row['sift_change']}")
+                discordance_summary.append(f"SIFT prediction change: {row['sift_change']}")
             if row['polyphen_change']:
-                discordance_summary.append(f"PolyPhen change: {row['polyphen_change']}")
-            if row['unmatched_consequences'] > 0:
-                discordance_summary.append(f"Unmatched consequences (annotation differences)")
+                discordance_summary.append(f"PolyPhen prediction change: {row['polyphen_change']}")
+            if row.get('consequence_relationship') == 'disjoint_consequences':
+                discordance_summary.append(f"Disjoint functional consequences between builds")
+
+            # LOW level discordances
+            if row['gene_changes'] > 0:
+                discordance_summary.append(f"Gene symbol changes: {row['gene_changes']} (annotation noise)")
+            if row.get('consequence_relationship') == 'partial_overlap_consequences':
+                discordance_summary.append(f"Partial consequence overlap between builds")
+            if row.get('consequence_relationship') in ['hg19_subset_of_hg38', 'hg38_subset_of_hg19']:
+                discordance_summary.append(f"Consequence subset relationship (annotation completeness)")
             if row['same_consequence_different_transcripts'] > 0:
                 discordance_summary.append(f"Same consequence, different transcripts: {row['same_consequence_different_transcripts']}")
             if row['pos_match'] == 0:
                 discordance_summary.append(f"Position mismatch")
             if row['gt_match'] == 0:
                 discordance_summary.append(f"Genotype mismatch")
-            
-            # Only include variants with discordances (score > 0)
-            if final_priority_score == 0:
-                continue
             
             # Add calculated fields to the row
             variant_info = row.to_dict()

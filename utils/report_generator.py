@@ -13,6 +13,7 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 from jinja2 import Template
+from data_utils import format_consequence_relationship
 
 
 class ReportGenerator:
@@ -42,6 +43,13 @@ class ReportGenerator:
         
         print(f"✓ HTML report saved to: {output_file}")
         return output_file
+    
+    def _format_consequence_relationship(self, variant):
+        """Format consequence relationship with unified display format"""
+        relationship = variant.get('Consequence_Relationship', 'unknown')
+        change = variant.get('Consequence_Change', 'no data')
+        
+        return f"{relationship}: {change}"
     
     def _collect_metadata(self):
         """Collect basic metadata"""
@@ -190,7 +198,9 @@ class ReportGenerator:
                     'Clinical_Significance_hg19', 'Clinical_Significance_hg38',
                     'Impact_hg19', 'Impact_hg38',
                     'SIFT_hg19', 'SIFT_hg38', 'PolyPhen_hg19', 'PolyPhen_hg38',
-                    'Consequence_hg19', 'Consequence_hg38', 'Priority_Score', 'Priority_Category'
+                    'Priority_Score', 'Priority_Category',
+                    'Consequence_Relationship', 'Consequence_Change',
+                    'High_Impact_Consequences_hg19', 'High_Impact_Consequences_hg38'
                 ]
                 
                 # Only include columns that exist
@@ -489,7 +499,7 @@ class ReportGenerator:
                             <th>Gene hg38</th>
                             <th>Clinical significance</th>
                             <th>Impact level</th>
-                            <th>Consequence</th>
+                            <th>Consequence Relationship</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -529,13 +539,7 @@ class ReportGenerator:
                                 {% endif %}
                             </td>
                             <td>
-                                {% set hg19_consequence = variant.get('Consequence_hg19', 'N/A') %}
-                                {% set hg38_consequence = variant.get('Consequence_hg38', 'N/A') %}
-                                {% if hg19_consequence != hg38_consequence %}
-                                    <span class="clinical-change">{{ hg19_consequence }} → {{ hg38_consequence }}</span>
-                                {% else %}
-                                    {{ hg19_consequence }}
-                                {% endif %}
+                                {{ format_consequence_relationship(variant) }}
                             </td>
                         </tr>
                         {% endfor %}
@@ -614,6 +618,7 @@ class ReportGenerator:
         
         template = Template(template_str)
         template.globals['get_summary_value'] = self._get_summary_value
+        template.globals['format_consequence_relationship'] = self._format_consequence_relationship  
         return template.render(**self.report_data)
 
 

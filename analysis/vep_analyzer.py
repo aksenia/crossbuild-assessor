@@ -7,6 +7,7 @@ transcript-level discordances between genome builds.
 
 import pandas as pd
 from utils.transcript_utils import normalize_transcript_id, extract_genotype_from_alleles
+from utils.data_utils import clean_string
 from utils.clinical_utils import (
     is_pathogenic_clinical_significance,
     is_benign_clinical_significance, 
@@ -14,7 +15,7 @@ from utils.clinical_utils import (
     parse_polyphen_prediction,
     normalize_clinical_significance
 )
-
+from config.constants import VEP_CONSEQUENCE_IMPACT
 
 class VEPAnalyzer:
     """Analyzes VEP annotations to identify discordances between genome builds"""
@@ -122,8 +123,8 @@ class VEPAnalyzer:
         
         return vep_analyses
     
-    def _analyze_single_variant(self, variant_row, hg19_annotations, hg38_annotations):
-        """Apply comprehensive VEP analysis to a single variant (cached part)"""
+    def _analyze_single_variant(self, variant_row, hg19_annotations, hg38_annotations): 
+        """Apply comprehensive VEP analysis to a single variant (cached part) - CLEAN SET-BASED APPROACH"""
         chrom = variant_row['source_chrom']
         pos = variant_row['source_pos']
         
@@ -136,136 +137,133 @@ class VEPAnalyzer:
         
         # Initialize analysis variables
         same_transcript_consequence_changes = 0
-        same_consequence_different_transcripts = 0
-        unmatched_consequences = 0
-        gene_changes = 0
-        impact_changes = 0
         problematic_transcripts_hg19 = []
         problematic_transcripts_hg38 = []
         
         if len(hg19_transcripts_df) > 0 or len(hg38_transcripts_df) > 0:
+            # CLEAN SET-BASED ANALYSIS: Analyze all transcripts and consequences as sets
+            from utils.data_utils import clean_string
+            
             # Organize transcript data by build
             hg19_transcripts = {}
             hg38_transcripts = {}
             
             for _, row in hg19_transcripts_df.iterrows():
-                hg19_base = normalize_transcript_id(row['feature'])
-                if hg19_base:
-                    hg19_transcripts[hg19_base] = {
-                        'consequence': row['consequence'],
-                        'impact': row['impact'],
-                        'symbol': row['symbol'],
-                        'feature_id': row['feature']
-                    }
+                hg19_transcripts[row['feature']] = {
+                    'consequence': row['consequence'],
+                    'impact': row['impact'],
+                    'symbol': row['symbol'],
+                    'feature_id': row['feature']
+                }
             
             for _, row in hg38_transcripts_df.iterrows():
-                hg38_base = normalize_transcript_id(row['feature'])
-                if hg38_base:
-                    hg38_transcripts[hg38_base] = {
-                        'consequence': row['consequence'],
-                        'impact': row['impact'],
-                        'symbol': row['symbol'],
-                        'feature_id': row['feature']
-                    }
+                hg38_transcripts[row['feature']] = {
+                    'consequence': row['consequence'],
+                    'impact': row['impact'],
+                    'symbol': row['symbol'],
+                    'feature_id': row['feature']
+                }
             
-            # Strategy 1: Match by transcript ID (highest priority)
-            matched_transcripts = []
-            unmatched_hg19 = dict(hg19_transcripts)
-            unmatched_hg38 = dict(hg38_transcripts)
+            # Step 1: Same transcript ID analysis (for same_transcript_consequence_changes)
+            hg19_tx_dict = {}  # transcript_base_id -> data
+            hg38_tx_dict = {}  # transcript_base_id -> data
             
-            for tx_id in set(hg19_transcripts.keys()) & set(hg38_transcripts.keys()):
-                hg19_data = hg19_transcripts[tx_id]
-                hg38_data = hg38_transcripts[tx_id]
+            # Normalize transcript IDs and group by base ID
+            for tx_id, data in hg19_transcripts.items():
+                base_id = normalize_transcript_id(tx_id)
+                if base_id:
+                    hg19_tx_dict[base_id] = data
+            
+            for tx_id, data in hg38_transcripts.items():
+                base_id = normalize_transcript_id(tx_id)
+                if base_id:
+                    hg38_tx_dict[base_id] = data
+            
+            # Find same transcript IDs with different consequences
+            for base_id in set(hg19_tx_dict.keys()) & set(hg38_tx_dict.keys()):
+                hg19_data = hg19_tx_dict[base_id]
+                hg38_data = hg38_tx_dict[base_id]
                 
-                consequence_match = hg19_data['consequence'] == hg38_data['consequence']
-                impact_match = hg19_data['impact'] == hg38_data['impact']
-                gene_match = hg19_data['symbol'] == hg38_data['symbol']
+                # Use robust string comparison
+                consequence_match = clean_string(hg19_data['consequence']) == clean_string(hg38_data['consequence'])
                 
-                matched_transcripts.append({
-                    'transcript': tx_id,
-                    'consequence_match': consequence_match,
-                    'impact_match': impact_match,
-                    'gene_match': gene_match,
-                    'hg19_consequence': hg19_data['consequence'],
-                    'hg38_consequence': hg38_data['consequence'],
-                    'hg19_impact': hg19_data['impact'],
-                    'hg38_impact': hg38_data['impact']
-                })
-                
-                # FIXED LOGIC: Only count actual differences
                 if not consequence_match:
                     same_transcript_consequence_changes += 1
                     problematic_transcripts_hg19.append(f"{hg19_data['feature_id']}({hg19_data['consequence']})")
                     problematic_transcripts_hg38.append(f"{hg38_data['feature_id']}({hg38_data['consequence']})")
-                
-                if not impact_match:
-                    impact_changes += 1
-                if not gene_match:
-                    gene_changes += 1
-                
-                # Remove from unmatched
-                unmatched_hg19.pop(tx_id, None)
-                unmatched_hg38.pop(tx_id, None)
             
-            # Strategy 2: Match by consequence type (moderate priority)
-            # Group remaining transcripts by consequence
-            hg19_by_consequence = {}
-            for tx_id, data in unmatched_hg19.items():
-                cons = data['consequence']
-                if cons not in hg19_by_consequence:
-                    hg19_by_consequence[cons] = []
-                hg19_by_consequence[cons].append(tx_id)
+            # Step 2: Set-based transcript relationship analysis
+            all_hg19_transcript_ids = {normalize_transcript_id(tx_id) for tx_id in hg19_transcripts.keys() if normalize_transcript_id(tx_id)}
+            all_hg38_transcript_ids = {normalize_transcript_id(tx_id) for tx_id in hg38_transcripts.keys() if normalize_transcript_id(tx_id)}
             
-            hg38_by_consequence = {}
-            for tx_id, data in unmatched_hg38.items():
-                cons = data['consequence']
-                if cons not in hg38_by_consequence:
-                    hg38_by_consequence[cons] = []
-                hg38_by_consequence[cons].append(tx_id)
+            # Transcript relationship
+            if len(all_hg19_transcript_ids) == 0 and len(all_hg38_transcript_ids) == 0:
+                transcript_relationship = 'no_transcripts'
+            elif all_hg19_transcript_ids == all_hg38_transcript_ids:
+                transcript_relationship = 'matched'
+            elif len(all_hg19_transcript_ids - all_hg38_transcript_ids) == 0:
+                transcript_relationship = 'hg19_subset_of_hg38'
+            elif len(all_hg38_transcript_ids - all_hg19_transcript_ids) == 0:
+                transcript_relationship = 'hg38_subset_of_hg19'
+            elif len(all_hg19_transcript_ids & all_hg38_transcript_ids) == 0:
+                transcript_relationship = 'disjoint_transcripts'
+            else:
+                transcript_relationship = 'partial_overlap_transcripts'
             
-            # Count matched consequences
-            matched_consequences = set(hg19_by_consequence.keys()) & set(hg38_by_consequence.keys())
-            same_consequence_different_transcripts = len(matched_consequences)
+            # Step 3: Set-based consequence relationship analysis  
+            all_hg19_consequences = {clean_string(data['consequence']) for data in hg19_transcripts.values() if clean_string(data['consequence'])}
+            all_hg38_consequences = {clean_string(data['consequence']) for data in hg38_transcripts.values() if clean_string(data['consequence'])}
             
-            # Remove matched consequences from remaining
-            remaining_hg19 = dict(unmatched_hg19)
-            remaining_hg38 = dict(unmatched_hg38)
+            # Consequence relationship
+            if len(all_hg19_consequences) == 0 and len(all_hg38_consequences) == 0:
+                consequence_relationship = 'no_consequences'
+                unmatched_consequences = 0
+            elif all_hg19_consequences == all_hg38_consequences:
+                consequence_relationship = 'matched'
+                unmatched_consequences = 0
+            elif len(all_hg19_consequences - all_hg38_consequences) == 0:
+                consequence_relationship = 'hg19_subset_of_hg38'
+                unmatched_consequences = 0  # Subset = no scoring weight
+            elif len(all_hg38_consequences - all_hg19_consequences) == 0:
+                consequence_relationship = 'hg38_subset_of_hg19' 
+                unmatched_consequences = 0  # Subset = no scoring weight
+            elif len(all_hg19_consequences & all_hg38_consequences) == 0:
+                consequence_relationship = 'disjoint_consequences'
+                # Check if HIGH/MODERATE consequences involved for scoring
+                hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} 
+                                    for cons in all_hg19_consequences)
+                hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} 
+                                    for cons in all_hg38_consequences)
+                unmatched_consequences = 5 if (hg19_significant or hg38_significant) else 0
+            else:
+                consequence_relationship = 'partial_overlap_consequences'
+                # Check if HIGH/MODERATE consequences involved for scoring
+                unique_hg19 = all_hg19_consequences - all_hg38_consequences
+                unique_hg38 = all_hg38_consequences - all_hg19_consequences
+                hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} 
+                                    for cons in unique_hg19)
+                hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} 
+                                    for cons in unique_hg38)
+                unmatched_consequences = 1 if (hg19_significant or hg38_significant) else 0
             
-            for consequence in matched_consequences:
-                for tx_id in hg19_by_consequence[consequence]:
-                    remaining_hg19.pop(tx_id, None)
-                for tx_id in hg38_by_consequence[consequence]:
-                    remaining_hg38.pop(tx_id, None)
-            
-            # Strategy 3: Count unmatched consequences - UPDATED to use VEP hierarchy
-            unmatched_hg19_consequences = set(data['consequence'] for data in remaining_hg19.values())
-            unmatched_hg38_consequences = set(data['consequence'] for data in remaining_hg38.values())
-
-            if len(unmatched_hg19_consequences) > 0 or len(unmatched_hg38_consequences) > 0:
-                # Import VEP consequence hierarchy
-                from config.constants import VEP_CONSEQUENCE_IMPACT
-                
-                # Get impact levels for unmatched consequences
-                unmatched_hg19_impacts = {VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') 
-                                        for cons in unmatched_hg19_consequences}
-                unmatched_hg38_impacts = {VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') 
-                                        for cons in unmatched_hg38_consequences}
-                
-                # Only flag as significant if HIGH/MODERATE consequences are involved
-                significant_impacts = {'HIGH', 'MODERATE'}
-                has_significant_unmatched = (
-                    any(impact in significant_impacts for impact in unmatched_hg19_impacts) or
-                    any(impact in significant_impacts for impact in unmatched_hg38_impacts)
-                )
-                
-                unmatched_consequences = 1 if has_significant_unmatched else 0
-                
-                # Add to problematic transcripts only if significant
-                if has_significant_unmatched:
-                    for tx_id, data in remaining_hg19.items():
-                        problematic_transcripts_hg19.append(f"{data['feature_id']}({data['consequence']})")
-                    for tx_id, data in remaining_hg38.items():
-                        problematic_transcripts_hg38.append(f"{data['feature_id']}({data['consequence']})")
+            # Set other analysis variables for compatibility
+            same_consequence_different_transcripts = 0  # Not used in new approach
+            gene_changes = 0  # Will be calculated later
+            impact_changes = 0  # Will be calculated later
+            transcript_pairs_analyzed = len(hg19_transcripts) + len(hg38_transcripts)
+        
+        else:
+            # No transcript data available
+            same_transcript_consequence_changes = 0
+            same_consequence_different_transcripts = 0
+            unmatched_consequences = 0
+            gene_changes = 0
+            impact_changes = 0
+            problematic_transcripts_hg19 = []
+            problematic_transcripts_hg38 = []
+            transcript_pairs_analyzed = 0
+            transcript_relationship = 'no_transcripts'
+            consequence_relationship = 'no_consequences'
         
         # FIXED: Get representative VEP information with proper fallbacks
         # Priority: transcript data > any annotation data > empty string
@@ -315,6 +313,13 @@ class VEPAnalyzer:
         hg38_consequence = get_best_consequence(hg38_transcripts_df, hg38_annotations)
         hg19_impact = get_best_impact(hg19_annotations)
         hg38_impact = get_best_impact(hg38_annotations)
+        
+        # Calculate gene and impact changes using clean_string
+        if clean_string(hg19_gene) != clean_string(hg38_gene):
+            gene_changes = 1
+        
+        if clean_string(hg19_impact) != clean_string(hg38_impact):
+            impact_changes = 1
         
         # Clinical significance and pathogenicity predictions
         def get_best_clinical_data(annotations_df, column):
@@ -386,7 +391,7 @@ class VEPAnalyzer:
             'pos_difference': variant_row['pos_difference'],
             
             # VEP analysis results
-            'transcript_pairs_analyzed': len(hg19_transcripts_df) + len(hg38_transcripts_df),
+            'transcript_pairs_analyzed': transcript_pairs_analyzed,
             'same_transcript_consequence_changes': same_transcript_consequence_changes,
             'same_consequence_different_transcripts': same_consequence_different_transcripts,
             'unmatched_consequences': unmatched_consequences,
@@ -394,12 +399,19 @@ class VEPAnalyzer:
             'impact_changes': impact_changes,
             'problematic_transcripts_hg19': '; '.join(problematic_transcripts_hg19) if problematic_transcripts_hg19 else '',
             'problematic_transcripts_hg38': '; '.join(problematic_transcripts_hg38) if problematic_transcripts_hg38 else '',
+            'transcript_relationship': transcript_relationship,
+            'consequence_relationship': consequence_relationship,
             
             # Representative VEP information (FIXED)
             'hg19_gene': hg19_gene,
             'hg38_gene': hg38_gene,
-            'hg19_consequence': hg19_consequence,
-            'hg38_consequence': hg38_consequence,
+            'hg19_consequences_set': ', '.join(sorted(all_hg19_consequences)) if 'all_hg19_consequences' in locals() else '',
+            'hg38_consequences_set': ', '.join(sorted(all_hg38_consequences)) if 'all_hg38_consequences' in locals() else '',
+            'hg19_high_impact_consequences': ', '.join(sorted([cons for cons in (all_hg19_consequences if 'all_hg19_consequences' in locals() else set()) 
+                                                  if VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'}])),
+            'hg38_high_impact_consequences': ', '.join(sorted([cons for cons in (all_hg38_consequences if 'all_hg38_consequences' in locals() else set()) 
+                                                  if VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'}])),
+
             'hg19_impact': hg19_impact,
             'hg38_impact': hg38_impact,
             'hg19_clin_sig': hg19_clin_sig,
@@ -422,5 +434,5 @@ class VEPAnalyzer:
             'hg19_is_benign': hg19_is_benign,
             'hg38_is_benign': hg38_is_benign
         }
-        
+  
         return vep_analysis

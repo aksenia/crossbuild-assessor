@@ -87,6 +87,7 @@ from visualization.plot_generator import PrioritizationPlotter
 from analysis.variant_processor import VariantProcessor
 
 from utils.summary_utils import SummaryDataCalculator
+from utils.data_utils import format_consequence_relationship
 import json
 
 # Set visualization style from config
@@ -117,6 +118,12 @@ def get_impact_numeric_value(impact):
     impact_values = {'HIGH': 4, 'MODERATE': 3, 'LOW': 2, 'MODIFIER': 1}
     return impact_values.get(impact, 0)
 
+def format_consequence_relationship_for_csv(row):
+    return format_consequence_relationship(
+        row.get('consequence_relationship', 'unknown'),
+        row.get('hg19_consequences_set', ''),
+        row.get('hg38_consequences_set', '')
+    )
 
 def format_for_excel(df):
     """Format dataframe for Excel compatibility with enhanced clinical details and proper genotype extraction"""
@@ -273,8 +280,8 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg38_clin_sig_normalized': 'Clinical_Significance_hg38',
         'hg19_impact': 'Impact_hg19',
         'hg38_impact': 'Impact_hg38',
-        'hg19_consequence': 'Consequence_hg19',
-        'hg38_consequence': 'Consequence_hg38',
+        'hg19_high_impact_consequences': 'High_Impact_Consequences_hg19',  
+        'hg38_high_impact_consequences': 'High_Impact_Consequences_hg38',  
         'hg19_sift': 'SIFT_hg19',
         'hg38_sift': 'SIFT_hg38',
         'hg19_polyphen': 'PolyPhen_hg19',
@@ -282,6 +289,10 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'priority_score': 'Priority_Score',
         'priority_category': 'Priority_Category',
         'discordance_summary': 'Discordance_Summary',
+        'transcript_relationship': 'Transcript_Relationship',
+        'consequence_relationship': 'Consequence_Relationship',
+        'problematic_transcripts_hg19': 'Problematic_Transcripts_hg19',
+        'problematic_transcripts_hg38': 'Problematic_Transcripts_hg38',
         'same_transcript_consequence_changes': 'Transcript_Changes',
         'gene_changes': 'Gene_Changes',
         'impact_changes': 'Impact_Changes',
@@ -314,12 +325,25 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         )
         output_columns.append('Has_Impact_Change')
     
-    # Add consequence change indicator
-    if 'Consequence_hg19' in output_columns and 'Consequence_hg38' in output_columns:
-        output_df['Has_Consequence_Change'] = (output_df['Consequence_hg19'] != output_df['Consequence_hg38']).apply(
-            lambda x: 'YES' if x else 'NO'
+    # Add consequence change indicator based on relationship type
+    if 'Consequence_Relationship' in output_columns:
+        output_df['Has_Consequence_Change'] = output_df['Consequence_Relationship'].apply(
+            lambda x: 'YES' if x in ['disjoint_consequences', 'partial_overlap_consequences', 'hg19_subset_of_hg38', 'hg38_subset_of_hg19'] else 'NO'
         )
         output_columns.append('Has_Consequence_Change')
+
+    # Add computed Consequence_Change column
+    if 'consequence_relationship' in df.columns:
+        def format_consequence_change(row):
+            return format_consequence_relationship_for_csv(row)
+        
+        output_df['Consequence_Change'] = df.apply(format_consequence_change, axis=1)
+        # Insert right after Consequence_Relationship
+        if 'Consequence_Relationship' in output_columns:
+            insert_index = output_columns.index('Consequence_Relationship') + 1
+            output_columns.insert(insert_index, 'Consequence_Change')
+        else:
+            output_columns.append('Consequence_Change')
     
     # Select only the columns we want in the final output
     final_df = output_df[output_columns].copy()

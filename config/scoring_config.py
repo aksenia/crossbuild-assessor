@@ -52,7 +52,9 @@ BASE_SCORES = {
     'gene_changes_mixed_impact': 2,                # Gene changes (mixed/unknown impact)
     
     # LOW: Technical and annotation issues (reduced weights)
-    'unmatched_consequences': 1,                   # DEMOTED: Unmatched consequences
+    'disjoint_consequences': 5,                    # Genuine functional discordance (MODERATE)
+    'partial_overlap_consequences': 1,             # Mixed signal (LOW)
+    'subset_consequences': 0,                      # Annotation completeness (no weight)
     'same_consequence_different_transcripts': 0.5, # DEMOTED: Different transcripts
     'position_mismatch': 3,                        # Position issues (liftover problems)
     'genotype_mismatch': 3,                        # Genotype issues (liftover problems)
