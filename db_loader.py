@@ -119,7 +119,8 @@ def create_database_schema(db_path):
             bcftools_hg38_ref TEXT,
             bcftools_hg38_alt TEXT,
             pos_match BOOLEAN,
-            gt_match BOOLEAN
+            gt_match BOOLEAN,
+            UNIQUE(source_chrom, source_pos, source_alleles)
         )
     """)
     
@@ -144,7 +145,8 @@ def create_database_schema(db_path):
             sift TEXT,
             polyphen TEXT,
             gnomadg_af REAL,
-            clin_sig TEXT
+            clin_sig TEXT,
+            UNIQUE(uploaded_variation, feature, consequence)
         )
     """
     
@@ -337,18 +339,47 @@ def load_comparison_data(comparison_file, db_path):
             'gt_match': 1 if row['gt_match'] in ['TRUE', True, 1] else 0
         })
     
-    processed_df = pd.DataFrame(processed_data)
-    
-    # Insert into database
-    conn = sqlite3.connect(db_path)
-    processed_df.to_sql('comparison', conn, if_exists='append', index=False)
-    conn.close()
-    
-    print(f"✓ Inserted {len(processed_df):,} records into comparison table")
-    if skipped_variants > 0:
-        print(f"✓ Skipped {skipped_variants:,} variants with missing source coordinates")
-    print(f"✓ Applied coordinate/allele adjustments to {coordinate_adjustments:,} variants")
-    print("✓ All coordinates normalized to VEP format")
+        processed_df = pd.DataFrame(processed_data)
+
+        # Insert into database - HANDLE DUPLICATES
+        conn = sqlite3.connect(db_path)
+        try:
+            cursor = conn.cursor()
+            
+            for _, row in processed_df.iterrows():
+                cursor.execute("""
+                    INSERT OR IGNORE INTO comparison (
+                        mapping_status, source_chrom, source_pos, source_alleles,
+                        flip, swap, liftover_hg38_chrom, liftover_hg38_pos,
+                        bcftools_hg38_chrom, bcftools_hg38_pos, bcftools_hg38_ref,
+                        bcftools_hg38_alt, pos_match, gt_match
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    row['mapping_status'], row['source_chrom'], row['source_pos'],
+                    row['source_alleles'], row['flip'], row['swap'],
+                    row['liftover_hg38_chrom'], row['liftover_hg38_pos'],
+                    row['bcftools_hg38_chrom'], row['bcftools_hg38_pos'],
+                    row['bcftools_hg38_ref'], row['bcftools_hg38_alt'],
+                    row['pos_match'], row['gt_match']
+                ))
+            
+            conn.commit()
+            unique_inserted = cursor.rowcount
+            total_attempted = len(processed_df)
+            duplicates_skipped = total_attempted - unique_inserted
+            
+            print(f"✓ Inserted {unique_inserted:,} unique records into comparison table")
+            if duplicates_skipped > 0:
+                print(f"✓ Skipped {duplicates_skipped:,} duplicate variants")
+            if skipped_variants > 0:
+                print(f"✓ Skipped {skipped_variants:,} variants with missing source coordinates")
+            print(f"✓ Applied coordinate/allele adjustments to {coordinate_adjustments:,} variants")
+            print("✓ All coordinates normalized to VEP format")
+                
+        except sqlite3.IntegrityError as e:
+            print(f"Error inserting data: {e}")
+        finally:
+            conn.close()
 
 def parse_vep_variant_id(variant_id):
     """
@@ -451,12 +482,40 @@ def load_vep_data(vep_file, db_path, genome_build):
                 'clin_sig': row.get('CLIN_SIG', '')
             })
         
-        # Insert chunk into database
+        # Insert chunk into database - HANDLE DUPLICATES
         chunk_processed = pd.DataFrame(parsed_data)
-        chunk_processed.to_sql(table_name, conn, if_exists='append', index=False)
-        total_records += len(chunk_processed)
-        
-        print(f"    → Inserted {len(chunk_processed):,} records (total: {total_records:,})")
+
+        try:
+            cursor = conn.cursor()
+            inserted_count = 0
+            
+            for _, row in chunk_processed.iterrows():
+                cursor.execute(f"""
+                    INSERT OR IGNORE INTO {table_name} (
+                        uploaded_variation, chr, pos, pos_original, ref_allele, alt_allele,
+                        location, allele, gene, feature, feature_type, consequence,
+                        impact, symbol, sift, polyphen, gnomadg_af, clin_sig
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    row['uploaded_variation'], row['chr'], row['pos'], row['pos_original'],
+                    row['ref_allele'], row['alt_allele'], row['location'], row['allele'],
+                    row['gene'], row['feature'], row['feature_type'], row['consequence'],
+                    row['impact'], row['symbol'], row['sift'], row['polyphen'],
+                    row['gnomadg_af'], row['clin_sig']
+                ))
+                if cursor.rowcount > 0:
+                    inserted_count += 1
+            
+            conn.commit()
+            total_records += inserted_count
+            duplicates_skipped = len(chunk_processed) - inserted_count
+            
+            print(f"    → Inserted {inserted_count:,} unique records (total: {total_records:,})")
+            if duplicates_skipped > 0:
+                print(f"    → Skipped {duplicates_skipped:,} duplicates in this chunk")
+                
+        except sqlite3.IntegrityError as e:
+            print(f"    → Warning: VEP duplicate handling issue: {e}")
     
     conn.close()
     print(f"✓ Completed loading {total_records:,} records into {table_name} table")
