@@ -7,7 +7,7 @@ transcript-level discordances between genome builds.
 
 import pandas as pd
 from utils.transcript_utils import normalize_transcript_id, extract_genotype_from_alleles
-from utils.data_utils import clean_string
+#from utils.data_utils import clean_string
 from utils.clinical_utils import (
     is_pathogenic_clinical_significance,
     is_benign_clinical_significance, 
@@ -125,6 +125,7 @@ class VEPAnalyzer:
     
     def _analyze_single_variant(self, variant_row, hg19_annotations, hg38_annotations): 
         """Apply comprehensive VEP analysis to a single variant (cached part) - CLEAN SET-BASED APPROACH"""
+        from utils.data_utils import clean_string
         chrom = variant_row['source_chrom']
         pos = variant_row['source_pos']
         
