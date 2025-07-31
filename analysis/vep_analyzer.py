@@ -211,40 +211,50 @@ class VEPAnalyzer:
             else:
                 transcript_relationship = 'partial_overlap_transcripts'
             
-            # Step 3: Set-based consequence relationship analysis  
-            all_hg19_consequences = {clean_string(data['consequence']) for data in hg19_transcripts.values() if clean_string(data['consequence'])}
-            all_hg38_consequences = {clean_string(data['consequence']) for data in hg38_transcripts.values() if clean_string(data['consequence'])}
-            
-            # Consequence relationship
+            # Step 3: Set-based consequence relationship analysis - FIXED
+            all_hg19_consequences = set()
+            all_hg38_consequences = set()
+
+            # Build sets more robustly
+            for data in hg19_transcripts.values():
+                cleaned_cons = clean_string(data['consequence'])
+                if cleaned_cons:
+                    all_hg19_consequences.add(cleaned_cons)
+
+            for data in hg38_transcripts.values():
+                cleaned_cons = clean_string(data['consequence'])
+                if cleaned_cons:
+                    all_hg38_consequences.add(cleaned_cons)
+
+            # Calculate relationships step by step
+            shared_consequences = all_hg19_consequences & all_hg38_consequences
+            unique_hg19 = all_hg19_consequences - all_hg38_consequences  
+            unique_hg38 = all_hg38_consequences - all_hg19_consequences
+
+            # Determine relationship
             if len(all_hg19_consequences) == 0 and len(all_hg38_consequences) == 0:
                 consequence_relationship = 'no_consequences'
                 unmatched_consequences = 0
-            elif all_hg19_consequences == all_hg38_consequences:
+            elif len(shared_consequences) > 0 and len(unique_hg19) == 0 and len(unique_hg38) == 0:
                 consequence_relationship = 'matched'
                 unmatched_consequences = 0
-            elif len(all_hg19_consequences - all_hg38_consequences) == 0:
-                consequence_relationship = 'hg19_subset_of_hg38'
-                unmatched_consequences = 0  # Subset = no scoring weight
-            elif len(all_hg38_consequences - all_hg19_consequences) == 0:
-                consequence_relationship = 'hg38_subset_of_hg19' 
-                unmatched_consequences = 0  # Subset = no scoring weight
-            elif len(all_hg19_consequences & all_hg38_consequences) == 0:
+            elif len(shared_consequences) == 0:  # Truly disjoint
                 consequence_relationship = 'disjoint_consequences'
-                # Check if HIGH/MODERATE consequences involved for scoring
-                hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} 
-                                    for cons in all_hg19_consequences)
-                hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} 
-                                    for cons in all_hg38_consequences)
+                # Score based on significant consequences
+                hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in all_hg19_consequences)
+                hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in all_hg38_consequences)
                 unmatched_consequences = 5 if (hg19_significant or hg38_significant) else 0
-            else:
+            elif len(unique_hg19) == 0:  # hg19 subset of hg38
+                consequence_relationship = 'hg19_subset_of_hg38'
+                unmatched_consequences = 0
+            elif len(unique_hg38) == 0:  # hg38 subset of hg19
+                consequence_relationship = 'hg38_subset_of_hg19'
+                unmatched_consequences = 0
+            else:  # Partial overlap
                 consequence_relationship = 'partial_overlap_consequences'
-                # Check if HIGH/MODERATE consequences involved for scoring
-                unique_hg19 = all_hg19_consequences - all_hg38_consequences
-                unique_hg38 = all_hg38_consequences - all_hg19_consequences
-                hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} 
-                                    for cons in unique_hg19)
-                hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} 
-                                    for cons in unique_hg38)
+                # Score based on unique significant consequences
+                hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg19)
+                hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg38)
                 unmatched_consequences = 1 if (hg19_significant or hg38_significant) else 0
             
             # Set other analysis variables for compatibility
