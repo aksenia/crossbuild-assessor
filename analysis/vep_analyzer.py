@@ -210,28 +210,46 @@ class VEPAnalyzer:
                 transcript_relationship = 'disjoint_transcripts'
             else:
                 transcript_relationship = 'partial_overlap_transcripts'
-            
+
             # Step 3: Set-based consequence relationship analysis - FIXED
             all_hg19_consequences = set()
             all_hg38_consequences = set()
 
-            # Build sets more robustly
+            # ROBUST consequence set building with comma-splitting
             for data in hg19_transcripts.values():
-                cleaned_cons = clean_string(data['consequence'])
-                if cleaned_cons:
-                    all_hg19_consequences.add(cleaned_cons)
+                consequence_field = data['consequence']
+                if pd.notna(consequence_field) and str(consequence_field).strip():
+                    # Split comma-separated consequences and clean each one
+                    individual_consequences = [c.strip() for c in str(consequence_field).split(',')]
+                    for cons in individual_consequences:
+                        cleaned_cons = clean_string(cons)
+                        if cleaned_cons:  # Only add non-empty cleaned consequences
+                            all_hg19_consequences.add(cleaned_cons)
 
             for data in hg38_transcripts.values():
-                cleaned_cons = clean_string(data['consequence'])
-                if cleaned_cons:
-                    all_hg38_consequences.add(cleaned_cons)
+                consequence_field = data['consequence']
+                if pd.notna(consequence_field) and str(consequence_field).strip():
+                    # Split comma-separated consequences and clean each one
+                    individual_consequences = [c.strip() for c in str(consequence_field).split(',')]
+                    for cons in individual_consequences:
+                        cleaned_cons = clean_string(cons)
+                        if cleaned_cons:  # Only add non-empty cleaned consequences
+                            all_hg38_consequences.add(cleaned_cons)
 
             # Calculate relationships step by step
             shared_consequences = all_hg19_consequences & all_hg38_consequences
             unique_hg19 = all_hg19_consequences - all_hg38_consequences  
             unique_hg38 = all_hg38_consequences - all_hg19_consequences
 
-            # Determine relationship
+            # DEBUG OUTPUT (remove after testing)
+            # print(f"DEBUG variant {chrom}:{pos}")
+            # print(f"  hg19_consequences: {sorted(all_hg19_consequences)}")
+            # print(f"  hg38_consequences: {sorted(all_hg38_consequences)}")
+            # print(f"  shared: {sorted(shared_consequences)}")
+            # print(f"  unique_hg19: {sorted(unique_hg19)}")
+            # print(f"  unique_hg38: {sorted(unique_hg38)}")
+
+            # Determine relationship 
             if len(all_hg19_consequences) == 0 and len(all_hg38_consequences) == 0:
                 consequence_relationship = 'no_consequences'
                 unmatched_consequences = 0
@@ -247,7 +265,7 @@ class VEPAnalyzer:
             elif len(unique_hg19) == 0:  # hg19 subset of hg38
                 consequence_relationship = 'hg19_subset_of_hg38'
                 unmatched_consequences = 0
-            elif len(unique_hg38) == 0:  # hg38 subset of hg19
+            elif len(unique_hg38) == 0:  # hg38 subset of hg19 
                 consequence_relationship = 'hg38_subset_of_hg19'
                 unmatched_consequences = 0
             else:  # Partial overlap
@@ -256,6 +274,11 @@ class VEPAnalyzer:
                 hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg19)
                 hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg38)
                 unmatched_consequences = 1 if (hg19_significant or hg38_significant) else 0
+
+            # Store consequence sets for CSV output (ENHANCED - now shows individual consequences)
+            all_hg19_consequences_stored = ', '.join(sorted(all_hg19_consequences)) if all_hg19_consequences else ''
+            all_hg38_consequences_stored = ', '.join(sorted(all_hg38_consequences)) if all_hg38_consequences else ''
+
             
             # Set other analysis variables for compatibility
             same_consequence_different_transcripts = 0  # Not used in new approach
