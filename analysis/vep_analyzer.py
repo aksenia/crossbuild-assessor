@@ -235,7 +235,7 @@ class VEPAnalyzer:
                         cleaned_cons = clean_string(cons)
                         if cleaned_cons:  # Only add non-empty cleaned consequences
                             all_hg38_consequences.add(cleaned_cons)
-
+            
             # Calculate relationships step by step
             shared_consequences = all_hg19_consequences & all_hg38_consequences
             unique_hg19 = all_hg19_consequences - all_hg38_consequences  
@@ -274,6 +274,10 @@ class VEPAnalyzer:
                 hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg19)
                 hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg38)
                 unmatched_consequences = 1 if (hg19_significant or hg38_significant) else 0
+
+            # DEBUG OUTPUT (remove after testing)
+            # print(f"  → Classification: {consequence_relationship}")
+
 
             # Store consequence sets for CSV output (ENHANCED - now shows individual consequences)
             all_hg19_consequences_stored = ', '.join(sorted(all_hg19_consequences)) if all_hg19_consequences else ''

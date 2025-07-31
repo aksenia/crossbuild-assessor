@@ -91,8 +91,8 @@ from pathlib import Path
 import sys
 
 def create_database_schema(db_path):
-    """Create database tables with proper indexes for efficient analysis"""
-    print("Creating database schema...")
+    """Create database tables WITHOUT unique constraints for faster loading"""
+    print("Creating optimized database schema (constraints added after loading)...")
     
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
@@ -102,7 +102,7 @@ def create_database_schema(db_path):
     cursor.execute("DROP TABLE IF EXISTS hg19_vep")
     cursor.execute("DROP TABLE IF EXISTS hg38_vep")
     
-    # Create comparison table
+    # Create comparison table WITHOUT unique constraint during loading
     cursor.execute("""
         CREATE TABLE comparison (
             id INTEGER PRIMARY KEY,
@@ -119,13 +119,13 @@ def create_database_schema(db_path):
             bcftools_hg38_ref TEXT,
             bcftools_hg38_alt TEXT,
             pos_match BOOLEAN,
-            gt_match BOOLEAN,
-            UNIQUE(source_chrom, source_pos, source_alleles)
+            gt_match BOOLEAN
+            -- NO UNIQUE constraint here for faster loading
         )
     """)
     
-    # Create VEP tables (identical structure for both builds)
-    vep_schema = """
+    # Create VEP tables WITHOUT unique constraints during loading
+    vep_schema_template = """
         CREATE TABLE {} (
             id INTEGER PRIMARY KEY,
             uploaded_variation TEXT,
@@ -145,35 +145,24 @@ def create_database_schema(db_path):
             sift TEXT,
             polyphen TEXT,
             gnomadg_af REAL,
-            clin_sig TEXT,
-            UNIQUE(uploaded_variation, feature, consequence)
+            clin_sig TEXT
+            -- NO UNIQUE constraint here for faster loading
         )
     """
     
-    cursor.execute(vep_schema.format('hg19_vep'))
-    cursor.execute(vep_schema.format('hg38_vep'))
+    cursor.execute(vep_schema_template.format('hg19_vep'))
+    cursor.execute(vep_schema_template.format('hg38_vep'))
     
-    # Create indexes for efficient joins and queries
-    print("Creating database indexes...")
-    
-    # Comparison table indexes
-    cursor.execute("CREATE INDEX idx_comp_source ON comparison(source_chrom, source_pos, source_alleles)")
-    cursor.execute("CREATE INDEX idx_comp_bcftools ON comparison(bcftools_hg38_chrom, bcftools_hg38_pos)")
-    cursor.execute("CREATE INDEX idx_comp_mapping_status ON comparison(mapping_status)")
-    cursor.execute("CREATE INDEX idx_comp_matches ON comparison(pos_match, gt_match)")
-    
-    # VEP table indexes
-    for build in ['hg19', 'hg38']:
-        table = f'{build}_vep'
-        cursor.execute(f"CREATE INDEX idx_{build}_coords ON {table}(chr, pos, ref_allele, alt_allele)")
-        cursor.execute(f"CREATE INDEX idx_{build}_coords_orig ON {table}(chr, pos_original)")
-        cursor.execute(f"CREATE INDEX idx_{build}_feature ON {table}(feature, feature_type)")
-        cursor.execute(f"CREATE INDEX idx_{build}_consequence ON {table}(consequence, impact)")
-        cursor.execute(f"CREATE INDEX idx_{build}_symbol ON {table}(symbol)")
+    # Create basic indexes for loading performance (but not unique ones yet)
+    print("Creating basic loading indexes...")
+    cursor.execute("CREATE INDEX idx_comp_loading ON comparison(source_chrom, source_pos)")
+    cursor.execute("CREATE INDEX idx_hg19_loading ON hg19_vep(chr, pos)")
+    cursor.execute("CREATE INDEX idx_hg38_loading ON hg38_vep(chr, pos)")
     
     conn.commit()
     conn.close()
-    print("Database schema created successfully")
+    print("✓ Optimized database schema created (unique constraints will be added after loading)")
+
 
 def parse_comparison_alleles(alleles_str):
     """
@@ -248,8 +237,9 @@ def adjust_comparison_coordinates(pos, ref, alt):
         # SNV: VEP keeps same position
         return pos
 
+
 def load_comparison_data(comparison_file, db_path):
-    """Load comparison file into database with coordinate adjustment to VEP format"""
+    """Load comparison file with optimized bulk loading"""
     print(f"Loading comparison data from: {comparison_file}")
     
     if not Path(comparison_file).exists():
@@ -269,7 +259,7 @@ def load_comparison_data(comparison_file, db_path):
     
     print(f"Loaded {len(df):,} comparison records")
     
-    # Validate required columns
+    # Validate required columns (same as before)
     required_cols = [
         'mapping_status', 'source_chrom', 'source_pos', 'source_alleles',
         'flip', 'swap', 'bcftools_hg38_chrom', 'bcftools_hg38_pos', 
@@ -280,7 +270,7 @@ def load_comparison_data(comparison_file, db_path):
     if missing_cols:
         raise ValueError(f"Missing required columns in comparison file: {missing_cols}")
     
-    # Convert coordinates and alleles to VEP format
+    # Convert coordinates and alleles to VEP format (same logic as before)
     coordinate_adjustments = 0
     processed_data = []
     skipped_variants = 0
@@ -318,14 +308,14 @@ def load_comparison_data(comparison_file, db_path):
         # Skip variants with missing essential coordinates
         if vep_source_pos is None:
             skipped_variants += 1
-            if skipped_variants <= 10:  # Only show first 10 warnings to avoid spam
+            if skipped_variants <= 10:
                 print(f"Warning: Skipping variant with missing source position: {row['source_chrom']}:{row['source_pos']}")
             continue
         
         processed_data.append({
             'mapping_status': row['mapping_status'],
             'source_chrom': row['source_chrom'],
-            'source_pos': int(vep_source_pos),  # Safe now - we checked for None above
+            'source_pos': int(vep_source_pos),
             'source_alleles': f"{vep_ref}/{vep_alt}" if vep_ref and vep_alt else row['source_alleles'],
             'flip': row['flip'],
             'swap': row['swap'],
@@ -338,48 +328,35 @@ def load_comparison_data(comparison_file, db_path):
             'pos_match': 1 if row['pos_match'] in ['TRUE', True, 1] else 0,
             'gt_match': 1 if row['gt_match'] in ['TRUE', True, 1] else 0
         })
-    
-        processed_df = pd.DataFrame(processed_data)
 
-        # Insert into database - HANDLE DUPLICATES
-        conn = sqlite3.connect(db_path)
-        try:
-            cursor = conn.cursor()
-            
-            for _, row in processed_df.iterrows():
-                cursor.execute("""
-                    INSERT OR IGNORE INTO comparison (
-                        mapping_status, source_chrom, source_pos, source_alleles,
-                        flip, swap, liftover_hg38_chrom, liftover_hg38_pos,
-                        bcftools_hg38_chrom, bcftools_hg38_pos, bcftools_hg38_ref,
-                        bcftools_hg38_alt, pos_match, gt_match
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    row['mapping_status'], row['source_chrom'], row['source_pos'],
-                    row['source_alleles'], row['flip'], row['swap'],
-                    row['liftover_hg38_chrom'], row['liftover_hg38_pos'],
-                    row['bcftools_hg38_chrom'], row['bcftools_hg38_pos'],
-                    row['bcftools_hg38_ref'], row['bcftools_hg38_alt'],
-                    row['pos_match'], row['gt_match']
-                ))
-            
-            conn.commit()
-            unique_inserted = cursor.rowcount
-            total_attempted = len(processed_df)
-            duplicates_skipped = total_attempted - unique_inserted
-            
-            print(f"✓ Inserted {unique_inserted:,} unique records into comparison table")
-            if duplicates_skipped > 0:
-                print(f"✓ Skipped {duplicates_skipped:,} duplicate variants")
-            if skipped_variants > 0:
-                print(f"✓ Skipped {skipped_variants:,} variants with missing source coordinates")
-            print(f"✓ Applied coordinate/allele adjustments to {coordinate_adjustments:,} variants")
-            print("✓ All coordinates normalized to VEP format")
+    processed_df = pd.DataFrame(processed_data)
+    
+    # OPTIMIZED: Remove duplicates in pandas BEFORE database insertion
+    print(f"Removing duplicates from {len(processed_df):,} records...")
+    original_count = len(processed_df)
+    processed_df = processed_df.drop_duplicates(subset=['source_chrom', 'source_pos', 'source_alleles'])
+    duplicates_removed = original_count - len(processed_df)
+    print(f"✓ Removed {duplicates_removed:,} duplicates, {len(processed_df):,} unique records remain")
+
+    # OPTIMIZED: Bulk insert without unique constraint checking
+    conn = sqlite3.connect(db_path)
+    try:
+        print("Performing optimized bulk insert...")
+        # Use pandas to_sql for optimized bulk loading
+        processed_df.to_sql('comparison', conn, if_exists='append', index=False, method='multi')
+        
+        print(f"✓ Inserted {len(processed_df):,} unique records into comparison table")
+        if skipped_variants > 0:
+            print(f"✓ Skipped {skipped_variants:,} variants with missing source coordinates")
+        print(f"✓ Applied coordinate/allele adjustments to {coordinate_adjustments:,} variants")
+        print("✓ All coordinates normalized to VEP format")
                 
-        except sqlite3.IntegrityError as e:
-            print(f"Error inserting data: {e}")
-        finally:
-            conn.close()
+    except Exception as e:
+        print(f"Error inserting data: {e}")
+        raise
+    finally:
+        conn.close()
+
 
 def parse_vep_variant_id(variant_id):
     """
@@ -412,7 +389,7 @@ def parse_vep_variant_id(variant_id):
         return None, None, None, None
 
 def load_vep_data(vep_file, db_path, genome_build):
-    """Load VEP annotation data into database"""
+    """Load VEP annotation data with optimized bulk loading"""
     print(f"Loading {genome_build} VEP data from: {vep_file}")
     
     if not Path(vep_file).exists():
@@ -420,7 +397,7 @@ def load_vep_data(vep_file, db_path, genome_build):
     
     table_name = f'{genome_build}_vep'
     
-    # Find header line
+    # Find header line (same as before)
     with open(vep_file, 'r') as f:
         lines = f.readlines()
     
@@ -433,8 +410,8 @@ def load_vep_data(vep_file, db_path, genome_build):
     if header_idx is None:
         raise ValueError(f"Could not find VEP header line starting with '#Uploaded_variation' in {vep_file}")
     
-    # Read VEP file in chunks for memory efficiency
-    chunk_size = 50000
+    # OPTIMIZED: Read in larger chunks and use bulk loading
+    chunk_size = 100000  # Larger chunks for better performance
     total_records = 0
     
     conn = sqlite3.connect(db_path)
@@ -448,7 +425,7 @@ def load_vep_data(vep_file, db_path, genome_build):
     )):
         print(f"  Processing chunk {chunk_num + 1} ({len(chunk_df):,} records)...")
         
-        # Parse variant IDs (coordinates already in VEP format)
+        # Parse variant IDs and prepare data (same logic as before)
         parsed_data = []
         for _, row in chunk_df.iterrows():
             chr_part, pos, ref, alt = parse_vep_variant_id(row['#Uploaded_variation'])
@@ -465,7 +442,7 @@ def load_vep_data(vep_file, db_path, genome_build):
                 'uploaded_variation': row['#Uploaded_variation'],
                 'chr': chr_part,
                 'pos': pos,
-                'pos_original': pos,  # Same as pos since VEP coordinates are kept as-is
+                'pos_original': pos,
                 'ref_allele': ref,
                 'alt_allele': alt,
                 'location': row.get('Location', ''),
@@ -482,43 +459,89 @@ def load_vep_data(vep_file, db_path, genome_build):
                 'clin_sig': row.get('CLIN_SIG', '')
             })
         
-        # Insert chunk into database - HANDLE DUPLICATES
+        # OPTIMIZED: Remove duplicates in pandas and bulk insert
         chunk_processed = pd.DataFrame(parsed_data)
-
+        
+        # Remove duplicates within this chunk
+        original_chunk_size = len(chunk_processed)
+        chunk_processed = chunk_processed.drop_duplicates(subset=['uploaded_variation', 'feature', 'consequence'])
+        chunk_duplicates = original_chunk_size - len(chunk_processed)
+        
         try:
-            cursor = conn.cursor()
-            inserted_count = 0
+            # Use pandas bulk insert instead of row-by-row
+            chunk_processed.to_sql(table_name, conn, if_exists='append', index=False, method='multi')
             
-            for _, row in chunk_processed.iterrows():
-                cursor.execute(f"""
-                    INSERT OR IGNORE INTO {table_name} (
-                        uploaded_variation, chr, pos, pos_original, ref_allele, alt_allele,
-                        location, allele, gene, feature, feature_type, consequence,
-                        impact, symbol, sift, polyphen, gnomadg_af, clin_sig
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (
-                    row['uploaded_variation'], row['chr'], row['pos'], row['pos_original'],
-                    row['ref_allele'], row['alt_allele'], row['location'], row['allele'],
-                    row['gene'], row['feature'], row['feature_type'], row['consequence'],
-                    row['impact'], row['symbol'], row['sift'], row['polyphen'],
-                    row['gnomadg_af'], row['clin_sig']
-                ))
-                if cursor.rowcount > 0:
-                    inserted_count += 1
-            
-            conn.commit()
+            inserted_count = len(chunk_processed)
             total_records += inserted_count
-            duplicates_skipped = len(chunk_processed) - inserted_count
             
-            print(f"    → Inserted {inserted_count:,} unique records (total: {total_records:,})")
-            if duplicates_skipped > 0:
-                print(f"    → Skipped {duplicates_skipped:,} duplicates in this chunk")
+            print(f"    → Inserted {inserted_count:,} unique records (removed {chunk_duplicates:,} duplicates)")
+            print(f"    → Total so far: {total_records:,}")
                 
-        except sqlite3.IntegrityError as e:
-            print(f"    → Warning: VEP duplicate handling issue: {e}")
+        except Exception as e:
+            print(f"    → Warning: VEP bulk insert issue: {e}")
     
     conn.close()
     print(f"✓ Completed loading {total_records:,} records into {table_name} table")
+
+def add_unique_constraints_and_indexes(db_path):
+    """Add unique constraints and full indexes AFTER all data is loaded"""
+    print("\n=== ADDING UNIQUE CONSTRAINTS AND OPTIMIZED INDEXES ===")
+    print("This may take several minutes for large datasets...")
+    
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    try:
+        # Remove the temporary loading indexes
+        print("Removing temporary loading indexes...")
+        cursor.execute("DROP INDEX IF EXISTS idx_comp_loading")
+        cursor.execute("DROP INDEX IF EXISTS idx_hg19_loading") 
+        cursor.execute("DROP INDEX IF EXISTS idx_hg38_loading")
+        
+        # Add unique constraints by creating unique indexes
+        print("Creating unique constraint for comparison table...")
+        cursor.execute("""
+            CREATE UNIQUE INDEX idx_comparison_unique 
+            ON comparison(source_chrom, source_pos, source_alleles)
+        """)
+        
+        print("Creating unique constraints for VEP tables...")
+        cursor.execute("""
+            CREATE UNIQUE INDEX idx_hg19_vep_unique 
+            ON hg19_vep(uploaded_variation, feature, consequence)
+        """)
+        
+        cursor.execute("""
+            CREATE UNIQUE INDEX idx_hg38_vep_unique 
+            ON hg38_vep(uploaded_variation, feature, consequence)
+        """)
+        
+        # Create optimized indexes for analysis queries
+        print("Creating optimized analysis indexes...")
+        
+        # Comparison table indexes
+        cursor.execute("CREATE INDEX idx_comp_bcftools ON comparison(bcftools_hg38_chrom, bcftools_hg38_pos)")
+        cursor.execute("CREATE INDEX idx_comp_mapping_status ON comparison(mapping_status)")
+        cursor.execute("CREATE INDEX idx_comp_matches ON comparison(pos_match, gt_match)")
+        
+        # VEP table indexes
+        for build in ['hg19', 'hg38']:
+            table = f'{build}_vep'
+            cursor.execute(f"CREATE INDEX idx_{build}_coords ON {table}(chr, pos, ref_allele, alt_allele)")
+            cursor.execute(f"CREATE INDEX idx_{build}_coords_orig ON {table}(chr, pos_original)")
+            cursor.execute(f"CREATE INDEX idx_{build}_feature ON {table}(feature, feature_type)")
+            cursor.execute(f"CREATE INDEX idx_{build}_consequence ON {table}(consequence, impact)")
+            cursor.execute(f"CREATE INDEX idx_{build}_symbol ON {table}(symbol)")
+        
+        conn.commit()
+        print("✓ All unique constraints and indexes created successfully")
+        
+    except Exception as e:
+        print(f"Error creating constraints/indexes: {e}")
+        print("Database may still be usable, but performance could be impacted")
+        raise
+    finally:
+        conn.close()
 
 def verify_database(db_path):
     """Verify database contents and coordinate adjustments"""
@@ -646,26 +669,32 @@ USAGE:
         sys.exit(1)
     
     try:
-        print(f"\n=== CREATING DATABASE: {db_path} ===")
+        print(f"\n=== CREATING OPTIMIZED DATABASE: {db_path} ===")
         
-        # Create database schema
+        # Step 1: Create schema without unique constraints
         create_database_schema(db_path)
         
-        # Load data from configured files
+        # Step 2: Load all data quickly (no constraint checking)
         load_comparison_data(config['input_files']['comparison'], db_path)
         load_vep_data(config['input_files']['hg19_vep'], db_path, 'hg19')
         load_vep_data(config['input_files']['hg38_vep'], db_path, 'hg38')
         
-        # Verify database
+        # Step 3: Add unique constraints and optimized indexes AFTER loading
+        add_unique_constraints_and_indexes(db_path)
+        
+        # Step 4: Verify database
         verify_database(db_path)
         
-        print(f"\n=== DATABASE CREATION COMPLETED ===")
+        print(f"\n=== OPTIMIZED DATABASE CREATION COMPLETED ===")
         print(f"✓ Database: {db_path}")
         print(f"✓ Size: {db_path.stat().st_size / (1024**3):.2f} GB")
+        print(f"\nOPTIMIZATION SUMMARY:")
+        print(f"✓ Bulk loading without constraint checking during insert")
+        print(f"✓ Duplicate removal in pandas before database insertion")
+        print(f"✓ Unique constraints added after all data loaded")
+        print(f"✓ Optimized indexes for analysis queries")
         print(f"\nIMPORTANT: All coordinates use VEP normalization")
-        print(f"  - SNVs: same position as input")
-        print(f"  - Indels: input position + 1")
-        print(f"\nReady for analysis with db_analyzer.py and variant_prioritizer.py")
+        print(f"Ready for analysis with db_analyzer.py and variant_prioritizer.py")
         
     except Exception as e:
         print(f"Error: {e}")
