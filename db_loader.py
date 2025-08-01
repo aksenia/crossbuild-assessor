@@ -578,18 +578,23 @@ def load_vep_data(vep_file, db_path, genome_build):
         chunk_processed = chunk_processed.drop_duplicates(subset=['uploaded_variation', 'feature', 'consequence'])
         chunk_duplicates = original_chunk_size - len(chunk_processed)
         
-    try:
-        # FIXED: Use chunked insert to avoid SQL variable limit
-        insert_chunk_size = 5000
-        for i in range(0, len(chunk_processed), insert_chunk_size):
-            insert_chunk = chunk_processed.iloc[i:i+insert_chunk_size]
-            insert_chunk.to_sql(table_name, conn, if_exists='append', index=False, method=None)
-        
-        inserted_count = len(chunk_processed)
-        total_records += inserted_count
-        
-        print(f"    → Inserted {inserted_count:,} unique records (removed {chunk_duplicates:,} duplicates)")
-        print(f"    → Total so far: {total_records:,}")
+        try:
+            # FIXED: Use chunked insert to avoid SQL variable limit
+            insert_chunk_size = 5000
+            inserted_count = 0  # Initialize here
+                
+            for i in range(0, len(chunk_processed), insert_chunk_size):
+                insert_chunk = chunk_processed.iloc[i:i+insert_chunk_size]
+                insert_chunk.to_sql(table_name, conn, if_exists='append', index=False, method=None)
+                inserted_count += len(insert_chunk)  # Accumulate properly
+            
+            total_records += inserted_count
+            
+            print(f"    → Inserted {inserted_count:,} unique records (removed {chunk_duplicates:,} duplicates)")
+            print(f"    → Total so far: {total_records:,}")
+                
+        except Exception as e:  # ← This except clause was MISSING!
+            print(f"    → Warning: VEP bulk insert issue: {e}")
     
     conn.close()
     print(f"✓ Completed loading {total_records:,} records into {table_name} table")
