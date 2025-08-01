@@ -408,6 +408,105 @@ def load_vep_data(vep_file, db_path, genome_build):
     
     table_name = f'{genome_build}_vep'
     
+    # Find header line
+    with open(vep_file, 'r') as f:
+        lines = f.readlines()
+    
+    header_idx = None
+    for i, line in enumerate(lines):
+        if line.startswith('#Uploaded_variation'):
+            header_idx = i
+            break
+    
+    if header_idx is None:
+        raise ValueError(f"Could not find VEP header line starting with '#Uploaded_variation' in {vep_file}")
+    
+    # OPTIMIZED: Read in larger chunks and use bulk loading
+    chunk_size = 100000  # Larger chunks for better performance
+    total_records = 0
+    
+    conn = sqlite3.connect(db_path)
+    
+    for chunk_num, chunk_df in enumerate(pd.read_csv(
+        vep_file, 
+        sep='\t', 
+        skiprows=header_idx,
+        chunksize=chunk_size,
+        low_memory=False
+    )):
+        print(f"  Processing chunk {chunk_num + 1} ({len(chunk_df):,} records)...")
+        
+        # Parse variant IDs and prepare data
+        parsed_data = []
+        for _, row in chunk_df.iterrows():
+            chr_part, pos, ref, alt = parse_vep_variant_id(row['#Uploaded_variation'])
+            
+            # Convert gnomAD frequency to float
+            gnomad_af = None
+            if 'gnomADg_AF' in row and pd.notna(row['gnomADg_AF']) and row['gnomADg_AF'] != '-':
+                try:
+                    gnomad_af = float(row['gnomADg_AF'])
+                except ValueError:
+                    gnomad_af = None
+            
+            parsed_data.append({
+                'uploaded_variation': row['#Uploaded_variation'],
+                'chr': chr_part,
+                'pos': pos,
+                'pos_original': pos,
+                'ref_allele': ref,
+                'alt_allele': alt,
+                'location': row.get('Location', ''),
+                'allele': row.get('Allele', ''),
+                'gene': row.get('Gene', ''),
+                'feature': row.get('Feature', ''),
+                'feature_type': row.get('Feature_type', ''),
+                'consequence': row.get('Consequence', ''),
+                'impact': row.get('IMPACT', ''),
+                'symbol': row.get('SYMBOL', ''),
+                'sift': row.get('SIFT', ''),
+                'polyphen': row.get('PolyPhen', ''),
+                'gnomadg_af': gnomad_af,
+                'clin_sig': row.get('CLIN_SIG', '')
+            })
+        
+        # OPTIMIZED: Remove duplicates in pandas and bulk insert
+        chunk_processed = pd.DataFrame(parsed_data)
+        
+        # Remove duplicates within this chunk
+        original_chunk_size = len(chunk_processed)
+        chunk_processed = chunk_processed.drop_duplicates(subset=['uploaded_variation', 'feature', 'consequence'])
+        chunk_duplicates = original_chunk_size - len(chunk_processed)
+        
+        # FIXED: Use chunked insert to avoid SQL variable limit (PROPERLY INDENTED)
+        try:
+            insert_chunk_size = 5000
+            inserted_count = 0
+            
+            for i in range(0, len(chunk_processed), insert_chunk_size):
+                insert_chunk = chunk_processed.iloc[i:i+insert_chunk_size]
+                insert_chunk.to_sql(table_name, conn, if_exists='append', index=False, method=None)
+                inserted_count += len(insert_chunk)
+            
+            total_records += inserted_count
+            
+            print(f"    → Inserted {inserted_count:,} unique records (removed {chunk_duplicates:,} duplicates)")
+            print(f"    → Total so far: {total_records:,}")
+                
+        except Exception as e:
+            print(f"    → Warning: VEP bulk insert issue: {e}")
+    
+    conn.close()
+    print(f"✓ Completed loading {total_records:,} records into {table_name} table")
+
+    """Load VEP annotation data with optimized bulk loading"""
+    print(f"Loading {genome_build} VEP data from: {vep_file}")
+    
+    if not Path(vep_file).exists():
+        raise FileNotFoundError(f"VEP file not found: {vep_file}")
+    
+    table_name = f'{genome_build}_vep'
+    
     # Find header line (same as before)
     with open(vep_file, 'r') as f:
         lines = f.readlines()
