@@ -200,6 +200,7 @@ class SummaryDataCalculator:
             
             # Directional changes
             changing_variants = df_full[df_full['hg19_clin_sig_normalized'] != df_full['hg38_clin_sig_normalized']]
+            directional_changes_list = [] 
             
             if len(changing_variants) > 0:
                 transition_counts = changing_variants.groupby(['hg19_clin_sig_normalized', 'hg38_clin_sig_normalized']).size()
