@@ -338,14 +338,25 @@ def load_comparison_data(comparison_file, db_path):
     duplicates_removed = original_count - len(processed_df)
     print(f"✓ Removed {duplicates_removed:,} duplicates, {len(processed_df):,} unique records remain")
 
-    # OPTIMIZED: Bulk insert without unique constraint checking
+    # FIXED: Use chunked bulk insert to avoid SQL variable limit
     conn = sqlite3.connect(db_path)
     try:
-        print("Performing optimized bulk insert...")
-        # Use pandas to_sql for optimized bulk loading
-        processed_df.to_sql('comparison', conn, if_exists='append', index=False, method='multi')
+        print("Performing optimized chunked bulk insert...")
+        
+        # Insert in chunks to avoid SQLite variable limit
+        chunk_size = 5000  # Safe chunk size for SQLite
+        total_inserted = 0
+        
+        for i in range(0, len(processed_df), chunk_size):
+            chunk = processed_df.iloc[i:i+chunk_size]
+            chunk.to_sql('comparison', conn, if_exists='append', index=False, method=None)
+            total_inserted += len(chunk)
+            
+            if i % (chunk_size * 5) == 0:  # Progress every 25k records
+                print(f"  Inserted {total_inserted:,}/{len(processed_df):,} records...")
         
         print(f"✓ Inserted {len(processed_df):,} unique records into comparison table")
+
         if skipped_variants > 0:
             print(f"✓ Skipped {skipped_variants:,} variants with missing source coordinates")
         print(f"✓ Applied coordinate/allele adjustments to {coordinate_adjustments:,} variants")
@@ -467,18 +478,18 @@ def load_vep_data(vep_file, db_path, genome_build):
         chunk_processed = chunk_processed.drop_duplicates(subset=['uploaded_variation', 'feature', 'consequence'])
         chunk_duplicates = original_chunk_size - len(chunk_processed)
         
-        try:
-            # Use pandas bulk insert instead of row-by-row
-            chunk_processed.to_sql(table_name, conn, if_exists='append', index=False, method='multi')
-            
-            inserted_count = len(chunk_processed)
-            total_records += inserted_count
-            
-            print(f"    → Inserted {inserted_count:,} unique records (removed {chunk_duplicates:,} duplicates)")
-            print(f"    → Total so far: {total_records:,}")
-                
-        except Exception as e:
-            print(f"    → Warning: VEP bulk insert issue: {e}")
+    try:
+        # FIXED: Use chunked insert to avoid SQL variable limit
+        insert_chunk_size = 5000
+        for i in range(0, len(chunk_processed), insert_chunk_size):
+            insert_chunk = chunk_processed.iloc[i:i+insert_chunk_size]
+            insert_chunk.to_sql(table_name, conn, if_exists='append', index=False, method=None)
+        
+        inserted_count = len(chunk_processed)
+        total_records += inserted_count
+        
+        print(f"    → Inserted {inserted_count:,} unique records (removed {chunk_duplicates:,} duplicates)")
+        print(f"    → Total so far: {total_records:,}")
     
     conn.close()
     print(f"✓ Completed loading {total_records:,} records into {table_name} table")
