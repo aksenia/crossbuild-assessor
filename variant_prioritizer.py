@@ -261,8 +261,15 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
     
     print(f"Creating clinical evidence-focused CSV output for top {min(len(df), max_variants):,} variants...")
     
-    # Take top variants by priority score
-    output_df = df.head(max_variants).copy()
+    # DEDUPLICATE by variant position (keep highest priority score per variant)
+    print(f"Deduplicating variants (before: {len(df):,} records)...")
+    df_dedup = df.loc[df.groupby(['source_chrom', 'source_pos'])['priority_score'].idxmax()]
+    duplicates_removed = len(df) - len(df_dedup)
+    print(f"✓ Removed {duplicates_removed:,} duplicate transcript records")
+    print(f"✓ {len(df_dedup):,} unique variants remain")
+    
+    # Take top unique variants by priority score
+    output_df = df_dedup.head(max_variants).copy()
     
     # Add rank column
     output_df['Rank'] = range(1, len(output_df) + 1)
