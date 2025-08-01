@@ -499,6 +499,7 @@ def load_vep_data(vep_file, db_path, genome_build):
     conn.close()
     print(f"✓ Completed loading {total_records:,} records into {table_name} table")
 
+def load_vep_data(vep_file, db_path, genome_build):
     """Load VEP annotation data with optimized bulk loading"""
     print(f"Loading {genome_build} VEP data from: {vep_file}")
     
