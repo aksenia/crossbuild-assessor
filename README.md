@@ -1,18 +1,16 @@
 # crossbuild-assessor
 
-**Genomic variant analysis tool for evaluating liftover quality and identifying clinically relevant discordances between genome builds (hg19/hg38).**
+**Tool for analyzing genomic variant annotation discordances between genome builds (hg19/hg38).**
 
 ## Quick overview
 
-CrossBuild Assessor analyzes how genomic variants behave when lifted between reference genome builds. It identifies problematic variants that may affect clinical interpretation and provides quality control metrics for liftover operations.
+CrossBuild Assessor identifies variants that may affect clinical interpretation when lifted between reference genomes. the tool prioritizes clinical evidence changes over annotation differences.
 
 **What it does:**
 - Compares liftover tools (CrossMap vs bcftools) 
 - Analyzes VEP annotations across genome builds
-- Prioritizes variants needing clinical review
-- Generates Excel-ready reports with actionable insights
-
-**Who it's for:** Clinical genomics labs, researchers working with multi-build datasets, and teams transitioning between genome assemblies.
+- Prioritizes variants by clinical impact
+- Generates Excel reports and HTML summaries
 
 ---
 
@@ -23,53 +21,71 @@ git clone https://github.com/your-org/crossbuild-assessor.git
 cd crossbuild-assessor
 docker build -t crossbuild-assessor .
 
-# Run pipeline
+# 1. Load data
 docker run -v /path/to/data:/data crossbuild-assessor \
   python db_loader.py --config /data/config.json
 
+# 2. Quality control analysis  
+docker run -v /path/to/data:/data crossbuild-assessor \
+  python db_analyzer.py --db-path /data/genomic_analysis.db --output-dir /data/qc/
+
+# 3. Variant prioritization
 docker run -v /path/to/data:/data crossbuild-assessor \
   python variant_prioritizer.py --db-path /data/genomic_analysis.db --output-dir /data/results/
+
+# 4. Generate HTML report
+docker run -v /path/to/data:/data crossbuild-assessor \
+  python report_generator.py --input-dir /data/results/ --output /data/crossbuild_report.html
 ```
 
 ## Pipeline components
 
-| Script | Purpose | Output |
-|--------|---------|---------|
-| `db_loader.py` | Load liftover + VEP data into SQLite | Optimized database |
-| `db_analyzer.py` | Liftover quality control analysis | QC plots & reports |
-| `variant_prioritizer.py` | Clinical variant prioritization | Ranked Excel reports |
+| Script | Purpose | Key Output |
+|--------|---------|------------|
+| `db_loader.py` | Load liftover + VEP data | SQLite database |
+| `db_analyzer.py` | Liftover quality control | Concordance analysis |
+| `variant_prioritizer.py` | Clinical prioritization | Ranked CSV + plots |
+| `report_generator.py` | HTML summary report | Clinical dashboard |
 
 ## Priority categories
 
-- **CRITICAL**: Same transcript, different consequences
-- **HIGH**: Clinically significant impact transitions OR clinical significance changes  
-- **MODERATE**: Gene changes with clinical significance OR prediction changes
-- **INVESTIGATE**: Unmatched consequences OR non-significant transitions
-- **LOW**: Benign variants
+- **CRITICAL**: Clinical interpretation changes (PATHOGENIC↔BENIGN, VUS→PATHOGENIC) 
+- **HIGH**: Impact transitions, same transcript consequence changes
+- **MODERATE**: Pathogenicity prediction changes (SIFT/PolyPhen)
+- **LOW**: Technical issues, annotation differences
 
-## Documentation
+## Configuration
 
-- **[Installation](docs/installation.md)** - Setup and Docker usage
-- **[User guide](docs/user-guide.md)** - Complete usage tutorial
-- **[Configuration](docs/configuration.md)** - Scoring weights and settings
-- **[Architecture](docs/architecture.md)** - Code structure overview
-- **[Variant discrepancy scoring](docs/variant-discrepancy-scoring.md)** - Detailed scoring methodology
+Create `config.json`:
+
+```json
+{
+  "input_files": {
+    "comparison": "/path/to/liftover_comparison.txt",
+    "hg19_vep": "/path/to/variants_hg19.vep.txt",
+    "hg38_vep": "/path/to/variants_hg38.vep.txt"
+  },
+  "database": {
+    "path": "/path/to/genomic_analysis.db"
+  }
+}
+```
 
 ## Input requirements
 
-- **Liftover comparison file**: Tab-separated CrossMap vs bcftools comparison
-- **VEP annotation files**: Standard VEP output for both hg19 and hg38
-- **Configuration file**: JSON format specifying file paths
-
-See the [user guide](docs/user-guide.md) for detailed format requirements.
+- **Liftover comparison**: Tab-separated CrossMap vs bcftools results
+- **VEP annotations**: Standard VEP output for both builds
+- **Memory**: 8GB+ RAM for large datasets
 
 ## Example output
 
-Priority variants are ranked by clinical importance:
+Clinical prioritization CSV:
 
+```text
+Rank  Gene_hg19  Clinical_Significance_hg19  Clinical_Significance_hg38  Priority_Score  Priority_Category
+1     BRCA1      PATHOGENIC                   BENIGN                      40000          CRITICAL
+2     TP53       VUS                          PATHOGENIC                  30000          CRITICAL  
+3     APOE       HIGH impact                  MODERATE impact             12000          HIGH
 ```
-Rank  Chromosome  Position_hg19  Gene_hg19  Priority_Score  Priority_Category
-1     1           69134          OR4F5      15.2           CRITICAL
-2     1           865705         SAMD11     12.8           HIGH  
-3     2           38513          FAM150A    8.4            MODERATE
-```
+
+HTML report provides unified dashboard with embedded visualizations and clinical analysis.
