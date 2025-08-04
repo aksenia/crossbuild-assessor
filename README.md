@@ -21,7 +21,7 @@ git clone https://github.com/your-org/crossbuild-assessor.git
 cd crossbuild-assessor
 docker build -t crossbuild-assessor .
 
-# 1. Load data
+# 1. Load data. This step make take hours to run on a large dataset, better to use cluster.
 docker run -v /path/to/data:/data crossbuild-assessor \
   python db_loader.py --config /data/config.json
 
