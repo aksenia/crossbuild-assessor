@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.jpg" alt="CrossBuild Assessor Croissant Logo" width="250"/>
+</p>
+
 # crossbuild-assessor
 
 **Tool for analyzing genomic variant annotation discordances between genome builds (hg19/hg38).**
