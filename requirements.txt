@@ -10,7 +10,7 @@ seaborn>=0.12.0
 jinja2>=3.1.0
 
 # HGVS utilities
-hgvs = "*"
+hgvs>=1.5.5
 
 # Scientific computing
 scipy>=1.10.0

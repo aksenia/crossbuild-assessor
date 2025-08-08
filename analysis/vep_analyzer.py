@@ -102,14 +102,14 @@ class VEPAnalyzer:
             
             # Get VEP annotations for this specific variant - TARGETED QUERIES
             hg19_query = """
-            SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig,, hgvsc, hgvsp, 
+            SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig, hgvsc, hgvsp, 
             CASE WHEN CANONICAL = 'YES' THEN 1 ELSE 0 END as is_canonical
             FROM hg19_vep 
             WHERE chr = ? AND pos = ?
             """
             
             hg38_query = """
-            SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig,, hgvsc, hgvsp, 
+            SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig, hgvsc, hgvsp, 
             CASE WHEN CANONICAL = 'YES' THEN 1 ELSE 0 END as is_canonical
             FROM hg38_vep 
             WHERE chr = ? AND pos = ?
