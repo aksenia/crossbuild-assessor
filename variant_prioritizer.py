@@ -234,6 +234,22 @@ def format_for_excel(df):
     output_df['PolyPhen_hg19'] = df['hg19_polyphen'].fillna('')
     output_df['PolyPhen_hg38'] = df['hg38_polyphen'].fillna('')
     output_df['PolyPhen_Change'] = df['polyphen_change'].fillna('')
+
+    # HGVSc Analysis Columns
+    output_df['HGVSc_hg19'] = df['hg19_hgvsc_canonical'].fillna('')
+    output_df['HGVSc_hg38'] = df['hg38_hgvsc_canonical'].fillna('')
+    output_df['HGVSc_Match'] = (df['hgvsc_perfect_matches'] > 0).map({True: 'YES', False: 'NO'})
+    output_df['HGVSc_Matched_Transcripts'] = df['hgvsc_perfect_matches'].fillna(0)
+    output_df['HGVSc_Mismatched_Transcripts'] = df['hgvsc_mismatches'].fillna(0)
+    output_df['HGVSc_Match_Details'] = df['hgvsc_match_summary'].fillna('')
+
+    # HGVSp for reference (no analysis yet)
+ #   output_df['HGVSp_hg19'] = df['hg19_hgvsp_canonical'].fillna('')
+ #   output_df['HGVSp_hg38'] = df['hg38_hgvsp_canonical'].fillna('')
+
+    # Canonical transcript info
+    output_df['CANONICAL_transcript_id'] = df['hgvsc_canonical_transcript'].fillna('')
+    output_df['CANONICAL_HGVSc_Match'] = df['hgvsc_canonical_match'].map({True: 'YES', False: 'NO'})
     
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
@@ -243,7 +259,10 @@ def format_for_excel(df):
     output_df['Has_Unmatched_Consequences'] = (df['unmatched_consequences'] > 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Clinical_Change'] = (df['clin_sig_change'] != '').map({True: 'YES', False: 'NO'})
     output_df['Has_Pathogenicity_Change'] = ((df['sift_change'] != '') | (df['polyphen_change'] != '')).map({True: 'YES', False: 'NO'})
-    
+    # HGVSc summary flags
+    output_df['Has_HGVSc_Mismatch'] = (df['hgvsc_mismatches'] > 0).map({True: 'YES', False: 'NO'})
+    output_df['Perfect_CANONICAL_Match'] = df['hgvsc_canonical_match'].map({True: 'YES', False: 'NO'})
+
     print(f"Output dataframe created with {len(output_df)} rows")
     print("Sample output:")
     if len(output_df) > 0:

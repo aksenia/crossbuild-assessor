@@ -16,6 +16,7 @@ from utils.clinical_utils import (
     normalize_clinical_significance
 )
 from config.constants import VEP_CONSEQUENCE_IMPACT
+from utils.hgvs_utils import analyze_transcript_hgvsc_matches
 
 class VEPAnalyzer:
     """Analyzes VEP annotations to identify discordances between genome builds"""
@@ -101,13 +102,15 @@ class VEPAnalyzer:
             
             # Get VEP annotations for this specific variant - TARGETED QUERIES
             hg19_query = """
-            SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig
+            SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig,, hgvsc, hgvsp, 
+            CASE WHEN CANONICAL = 'YES' THEN 1 ELSE 0 END as is_canonical
             FROM hg19_vep 
             WHERE chr = ? AND pos = ?
             """
             
             hg38_query = """
-            SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig
+            SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig,, hgvsc, hgvsp, 
+            CASE WHEN CANONICAL = 'YES' THEN 1 ELSE 0 END as is_canonical
             FROM hg38_vep 
             WHERE chr = ? AND pos = ?
             """
@@ -241,14 +244,6 @@ class VEPAnalyzer:
             unique_hg19 = all_hg19_consequences - all_hg38_consequences  
             unique_hg38 = all_hg38_consequences - all_hg19_consequences
 
-            # DEBUG OUTPUT (remove after testing)
-            # print(f"DEBUG variant {chrom}:{pos}")
-            # print(f"  hg19_consequences: {sorted(all_hg19_consequences)}")
-            # print(f"  hg38_consequences: {sorted(all_hg38_consequences)}")
-            # print(f"  shared: {sorted(shared_consequences)}")
-            # print(f"  unique_hg19: {sorted(unique_hg19)}")
-            # print(f"  unique_hg38: {sorted(unique_hg38)}")
-
             # Determine relationship 
             if len(all_hg19_consequences) == 0 and len(all_hg38_consequences) == 0:
                 consequence_relationship = 'no_consequences'
@@ -274,10 +269,6 @@ class VEPAnalyzer:
                 hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg19)
                 hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg38)
                 unmatched_consequences = 1 if (hg19_significant or hg38_significant) else 0
-
-            # DEBUG OUTPUT (remove after testing)
-            # print(f"  → Classification: {consequence_relationship}")
-
 
             # Store consequence sets for CSV output (ENHANCED - now shows individual consequences)
             all_hg19_consequences_stored = ', '.join(sorted(all_hg19_consequences)) if all_hg19_consequences else ''
@@ -409,7 +400,8 @@ class VEPAnalyzer:
             if (hg19_polyphen_pred == 'benign' and hg38_polyphen_pred in ['possibly_damaging', 'probably_damaging']) or \
             (hg19_polyphen_pred in ['possibly_damaging', 'probably_damaging'] and hg38_polyphen_pred == 'benign'):
                 polyphen_change = f'{hg19_polyphen_pred.upper()}_TO_{hg38_polyphen_pred.upper()}'
-        
+    
+
         # Store variant VEP analysis (cached part - no scores)
         vep_analysis = {
             'mapping_status': variant_row['mapping_status'],
@@ -472,5 +464,63 @@ class VEPAnalyzer:
             'hg19_is_benign': hg19_is_benign,
             'hg38_is_benign': hg38_is_benign
         }
+
+        # HGVSc analysis
+        hgvsc_analysis = self._analyze_hgvsc_concordance(hg19_transcripts_df, hg38_transcripts_df)
+
+        # Add HGVSc results to the return dictionary
+        vep_analysis.update({
+            'hgvsc_perfect_matches': len(hgvsc_analysis['perfect_matches']),
+            'hgvsc_mismatches': len(hgvsc_analysis['mismatches']), 
+            'hgvsc_canonical_transcript': hgvsc_analysis['canonical_transcript'] or '',
+            'hgvsc_canonical_match': hgvsc_analysis['canonical_hgvsc_match'],
+            'hgvsc_match_summary': hgvsc_analysis['summary'],
+            'hgvsc_high_impact_matches': hgvsc_analysis['high_impact_matches'],
+            
+            # Representative HGVSc (canonical preferred)
+            'hg19_hgvsc_canonical': hgvsc_analysis['hg19_canonical_hgvsc'],
+            'hg38_hgvsc_canonical': hgvsc_analysis['hg38_canonical_hgvsc'],
+            'hg19_hgvsp_canonical': hgvsc_analysis['hg19_canonical_hgvsp'],
+            'hg38_hgvsp_canonical': hgvsc_analysis['hg38_canonical_hgvsp']
+        })
   
         return vep_analysis
+    
+
+    def _analyze_hgvsc_concordance(self, hg19_transcripts_df, hg38_transcripts_df):
+        """Analyze HGVSc concordance with canonical transcript priority"""
+        
+        # Extract transcript data with HGVSc and canonical info
+        hg19_tx_data = {}
+        hg38_tx_data = {}
+        
+        # Build hg19 transcript dictionary with HGVSc
+        for _, row in hg19_transcripts_df.iterrows():
+            base_id = normalize_transcript_id(row['feature'])
+            if base_id:
+                hg19_tx_data[base_id] = {
+                    'hgvsc': row.get('hgvsc', ''),
+                    'hgvsp': row.get('hgvsp', ''),
+                    'consequence': row.get('consequence', ''),
+                    'impact': row.get('impact', ''),
+                    'is_canonical': row.get('is_canonical', 0),
+                    'feature_id': row.get('feature', '')
+                }
+        
+        # Build hg38 transcript dictionary with HGVSc
+        for _, row in hg38_transcripts_df.iterrows():
+            base_id = normalize_transcript_id(row['feature'])
+            if base_id:
+                hg38_tx_data[base_id] = {
+                    'hgvsc': row.get('hgvsc', ''),
+                    'hgvsp': row.get('hgvsp', ''),
+                    'consequence': row.get('consequence', ''),
+                    'impact': row.get('impact', ''),
+                    'is_canonical': row.get('is_canonical', 0),
+                    'feature_id': row.get('feature', '')
+                }
+        
+        # Analyze HGVSc matches
+        hgvsc_results = analyze_transcript_hgvsc_matches(hg19_tx_data, hg38_tx_data)
+        
+        return hgvsc_results
