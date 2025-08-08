@@ -312,8 +312,15 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg38_sift': 'SIFT_hg38',
         'hg19_polyphen': 'PolyPhen_hg19',
         'hg38_polyphen': 'PolyPhen_hg38',
-        'priority_score': 'Priority_Score',
-        'priority_category': 'Priority_Category',
+        'hg19_hgvsc_canonical': 'HGVSc_hg19',
+        'hg38_hgvsc_canonical': 'HGVSc_hg38', 
+        'hgvsc_perfect_matches': 'HGVSc_Matched_Transcripts',
+        'hgvsc_mismatches': 'HGVSc_Mismatched_Transcripts',
+        'hgvsc_match_summary': 'HGVSc_Match_Details',
+        'hg19_hgvsp_canonical': 'HGVSp_hg19',
+        'hg38_hgvsp_canonical': 'HGVSp_hg38',
+        'hgvsc_canonical_transcript': 'CANONICAL_transcript_id',
+        'hgvsc_canonical_match': 'CANONICAL_HGVSc_Match',
         'discordance_summary': 'Discordance_Summary',
         'transcript_relationship': 'Transcript_Relationship',
         'consequence_relationship': 'Consequence_Relationship',
@@ -327,7 +334,9 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'polyphen_change': 'PolyPhen_Change',
         'pos_match': 'Position_Match',
         'gt_match': 'Genotype_Match',
-        'mapping_status': 'Mapping_Status'
+        'mapping_status': 'Mapping_Status',
+        'priority_score': 'Priority_Score',
+        'priority_category': 'Priority_Category'
     }
     
     # Create output dataframe with renamed columns
