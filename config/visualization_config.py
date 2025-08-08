@@ -7,7 +7,7 @@ Colorblind-friendly palettes optimized for clinical review.
 
 # Colorblind-friendly color palettes
 PLOT_COLORS = {
-    # Priority categories (5 colors)
+    # Priority categories (4 colors)
     'priority': ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4'],
     
     # Clinical evidence (7 colors)  
@@ -133,4 +133,4 @@ CLINICAL_TRANSITION_ORDER = [
 ]
 
 # Update priority category order
-PRIORITY_CATEGORY_ORDER = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'CONCORDANT']  # Remove 'INVESTIGATE'
+PRIORITY_CATEGORY_ORDER = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'CONCORDANT']  

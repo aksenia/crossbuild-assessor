@@ -47,6 +47,7 @@ EXPECTED DATA FORMATS:
         * CLIN_SIG: Clinical significance
         * HGVSc: HGVS coding sequence nomenclature
         * HGVSp: HGVS protein sequence nomenclature
+        * CANONICAL: Canonical transcript flag (YES/-)
 
 COORDINATE SYSTEMS:
     - Input comparison file: 0-based coordinates
@@ -149,7 +150,8 @@ def create_database_schema(db_path):
             gnomadg_af REAL,
             clin_sig TEXT,
             hgvsc TEXT,
-            hgvsp TEXT
+            hgvsp TEXT,
+            canonical TEXT
             -- NO UNIQUE constraint here for faster loading
         )
     """
@@ -473,7 +475,8 @@ def load_vep_data(vep_file, db_path, genome_build):
                 'gnomadg_af': gnomad_af,
                 'clin_sig': row.get('CLIN_SIG', ''),
                 'hgvsc': row.get('HGVSc', ''),
-                'hgvsp': row.get('HGVSp', '')
+                'hgvsp': row.get('HGVSp', ''),
+                'canonical': row.get('CANONICAL', '') 
             })
         
         # OPTIMIZED: Remove duplicates in pandas and bulk insert
