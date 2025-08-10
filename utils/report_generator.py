@@ -23,6 +23,23 @@ class ReportGenerator:
         """Initialize with input directory containing analysis outputs"""
         self.input_dir = Path(input_dir)
         self.report_data = {}
+
+    def _debug_summary_data(self):
+        """Debug what's actually in the summary data"""
+        print("\n=== DEBUG: Summary data structure ===")
+        
+        if 'summaries' in self.report_data:
+            for section_name, section_data in self.report_data['summaries'].items():
+                print(f"\nSection: {section_name}")
+                print(f"Type: {type(section_data)}")
+                
+                if isinstance(section_data, dict):
+                    for key, value in section_data.items():
+                        print(f"  {key}: {type(value)} = {value if len(str(value)) < 100 else str(value)[:100] + '...'}")
+                else:
+                    print(f"  Content: {section_data}")
+        else:
+            print("No 'summaries' key found in report_data")
         
     def generate_report(self, output_file):
         """Generate complete HTML report"""
@@ -31,6 +48,7 @@ class ReportGenerator:
         # Collect all data
         self._collect_metadata()
         self._collect_summary_data()
+        self._debug_summary_data() # DEBUG
         self._collect_plot_images()
         self._collect_variant_data()
         
@@ -157,28 +175,31 @@ class ReportGenerator:
             
             # Top 10 variants with clinical evidence focus
             if len(df) > 0:
-                # FIXED: Filter out variants with no actual changes
-                # Keep only variants that have some kind of change between builds
-                change_columns = [
-                    'Has_Clinical_Change', 'Has_Impact_Change', 'Has_Consequence_Change',
-                    'Clinical_Change_Direction', 'SIFT_Change', 'PolyPhen_Change'
-                ]
-                
-                # Create a mask for variants with any changes
+                # Filter to variants with meaningful clinical changes only
                 has_changes_mask = pd.Series([False] * len(df))
-                
-                for col in change_columns:
-                    if col in df.columns:
-                        if col.startswith('Has_'):
-                            # For Has_* columns, look for 'YES'
-                            has_changes_mask |= (df[col] == 'YES')
-                        else:
-                            # For other change columns, look for non-empty values
-                            has_changes_mask |= (df[col].notna() & (df[col] != '') & (df[col] != 'STABLE'))
-                
-                # Also include variants with high priority scores even if no specific change flags
-                if 'Priority_Score' in df.columns:
-                    has_changes_mask |= (df['Priority_Score'] > 5)  # Include high-scoring variants
+
+                # Clinical significance changes
+                if 'Has_Clinical_Change' in df.columns:
+                    has_changes_mask |= (df['Has_Clinical_Change'] == 'YES')
+
+                # Consequence relationship changes  
+                if 'Has_Consequence_Change' in df.columns:
+                    has_changes_mask |= (df['Has_Consequence_Change'] == 'YES')
+
+                # HGVS discordance (replacing Has_Impact_Change)
+                if 'HGVSc_MATCHED_discordant' in df.columns:
+                    def has_hgvs_discordance(value):
+                        """Check if there are discordant HGVS matches"""
+                        if pd.isna(value) or str(value).strip() in ['', '-', 'nan']:
+                            return False
+                        try:
+                            # Count non-empty items in comma-separated list
+                            items = [item.strip() for item in str(value).split(',') if item.strip()]
+                            return len(items) > 0
+                        except:
+                            return False
+                    
+                    has_changes_mask |= df['HGVSc_MATCHED_discordant'].apply(has_hgvs_discordance)
                 
                 # Filter to variants with changes
                 df_with_changes = df[has_changes_mask]
@@ -200,7 +221,9 @@ class ReportGenerator:
                     'SIFT_hg19', 'SIFT_hg38', 'PolyPhen_hg19', 'PolyPhen_hg38',
                     'Priority_Score', 'Priority_Category',
                     'Consequence_Relationship', 'Consequence_Change',
-                    'High_Impact_Consequences_hg19', 'High_Impact_Consequences_hg38'
+                    'High_Impact_Consequences_hg19', 'High_Impact_Consequences_hg38',
+                    # HGVS columns
+                    'CANONICAL_HGVSc_Match', 'HGVSc_MATCHED_concordant', 'HGVSc_MATCHED_discordant'
                 ]
                 
                 # Only include columns that exist
@@ -218,13 +241,22 @@ class ReportGenerator:
                 self.report_data['top_variants'] = []
     
     def _get_summary_value(self, data_path, fallback='N/A'):
-        """Safely extract values from nested summary data"""
+        """Safely extract values from nested summary data with detailed debugging"""
         try:
             current = self.report_data['summaries']
-            for key in data_path:
+            for i, key in enumerate(data_path):
+                if key not in current:
+                    print(f"DEBUG: Key '{key}' not found at path {data_path[:i+1]}")
+                    return fallback
                 current = current[key]
+            
+            # Debug what we're actually returning
+            if data_path == ['liftover', 'flip_swap_analysis'] or data_path == ['prioritization', 'priority_distribution']:
+                print(f"DEBUG: Path {data_path} returned type {type(current)}: {current}")
+            
             return current
-        except (KeyError, TypeError):
+        except (KeyError, TypeError) as e:
+            print(f"DEBUG: Error accessing {data_path}: {e}")
             return fallback
     
     def _render_html(self):
@@ -400,6 +432,27 @@ class ReportGenerator:
                 {% endfor %}
             </div>
 
+            <!-- HGVS NOMENCLATURE ANALYSIS  -->
+            <h3>HGVS nomenclature analysis</h3>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'canonical_match', 'match_rate_percentage']) }}%</div>
+                    <div class="metric-label">CANONICAL HGVSc Match Rate</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsc_concordance', 'concordant_rate_percentage']) }}%</div>
+                    <div class="metric-label">Concordant HGVS Rate</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'matched_transcripts', 'average_per_variant']) }}</div>
+                    <div class="metric-label">Avg Matched Transcripts</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsc_concordance', 'total_compared']) }}</div>
+                    <div class="metric-label">Total HGVS Comparisons</div>
+                </div>
+            </div>
+
             <!-- CLINICAL SIGNIFICANCE TRANSITIONS -->
             <h3>Clinical significance transitions (hg19→hg38)</h3>
             <div class="metrics-grid">
@@ -495,8 +548,8 @@ class ReportGenerator:
                         <tr>
                             <th>Priority</th>
                             <th>Location</th>
-                            <th>Gene hg19</th>
-                            <th>Gene hg38</th>
+                            <th>Gene (hg19/hg38)</th>
+                             <th>HGVS Matches</th>
                             <th>Clinical significance</th>
                             <th>Impact level</th>
                             <th>Consequence Relationship</th>
@@ -518,8 +571,56 @@ class ReportGenerator:
                                 {% endif %}
                             </td>
                             <td>{{ variant.get('Chromosome', 'N/A') }}:{{ variant.get('Position_hg19', 'N/A') }}</td>
-                            <td>{{ variant.get('Gene_hg19', 'N/A') }}</td>
-                            <td>{{ variant.get('Gene_hg38', 'N/A') }}</td>
+                            <!-- Gene hg19/hg38 concatenated  -->
+                            <td>
+                                {% set gene_hg19_raw = variant.get('Gene_hg19', 'N/A') %}
+                                {% set gene_hg38_raw = variant.get('Gene_hg38', 'N/A') %}
+                                
+                                {# Normalize NaN and empty values #}
+                                {% set gene_hg19 = 'N/A' if gene_hg19_raw | string == 'nan' or gene_hg19_raw == '' else gene_hg19_raw %}
+                                {% set gene_hg38 = 'N/A' if gene_hg38_raw | string == 'nan' or gene_hg38_raw == '' else gene_hg38_raw %}
+                                
+                                {% if gene_hg19 == gene_hg38 %}
+                                    <span class="clinical-stable">{{ gene_hg19 }}</span>
+                                {% else %}
+                                    <span class="clinical-change">{{ gene_hg19 }} → {{ gene_hg38 }}</span>
+                                {% endif %}
+                            </td>
+                            <!-- HGVS Matches with proper transcript protection -->
+                            <td style="font-size: 10px; max-width: 250px; vertical-align: top; line-height: 1.3;">
+                                {% set concordant_raw = variant.get('HGVSc_MATCHED_concordant', '') %}
+                                {% set discordant_raw = variant.get('HGVSc_MATCHED_discordant', '') %}
+                                
+                                {# Convert to string and handle NaN/float values #}
+                                {% set concordant = concordant_raw | string if concordant_raw is not none else '' %}
+                                {% set discordant = discordant_raw | string if discordant_raw is not none else '' %}
+                                
+                                {# Clean up values #}
+                                {% set concordant = '' if concordant in ['', '-', 'nan'] else concordant %}
+                                {% set discordant = '' if discordant in ['', '-', 'nan'] else discordant %}
+                                
+                                {% if concordant or discordant %}
+                                    <div class="{% if discordant %}clinical-change{% else %}clinical-stable{% endif %}">
+                                        {# Show concordant matches - simple format #}
+                                        {% if concordant %}
+                                            <div style="color: #2e7d32; margin-bottom: 6px;">
+                                                <strong>✓ Concordant:</strong><br>
+                                                <div style="margin-left: 4px; white-space: pre-wrap; word-break: break-word;">{{ concordant | replace('); ', ');\n') | replace('→', '\n    →') | safe }}</div>
+                                            </div>
+                                        {% endif %}
+                                        
+                                        {# Show discordant matches - simple format #}
+                                        {% if discordant %}
+                                            <div style="color: #c62828;">
+                                                <strong>✗ Discordant:</strong><br>
+                                                <div style="margin-left: 4px; white-space: pre-wrap; word-break: break-word;">{{ discordant | replace('); ', ');\n') | replace('→', '\n    →') | safe }}</div>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </td>
                             <td>
                                 {% set hg19_clin = variant.get('Clinical_Significance_hg19', 'N/A') %}
                                 {% set hg38_clin = variant.get('Clinical_Significance_hg38', 'N/A') %}

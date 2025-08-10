@@ -147,37 +147,19 @@ def format_for_excel(df):
     output_df['Priority_Category'] = df['priority_category']
     output_df['Chromosome'] = df['source_chrom']
     output_df['Position_hg19'] = df['source_pos']
-    output_df['Alleles'] = df['source_alleles']
     
-    # IMPROVED GENOTYPE EXTRACTION (using existing cached data)
-    def extract_genotypes_from_cached_data(row):
-        """Extract all 4 genotype components from existing cached data"""
-        # Extract hg19 REF/ALT from source_alleles
-        source_alleles = row['source_alleles']
-        if pd.notna(source_alleles) and '/' in str(source_alleles):
-            hg19_parts = str(source_alleles).split('/')
-            hg19_ref = hg19_parts[0].strip() if len(hg19_parts) > 0 else ''
-            hg19_alt = hg19_parts[1].strip() if len(hg19_parts) > 1 else ''
-        elif pd.notna(source_alleles) and ',' in str(source_alleles):
-            hg19_parts = str(source_alleles).split(',')
-            hg19_ref = hg19_parts[0].strip() if len(hg19_parts) > 0 else ''
-            hg19_alt = hg19_parts[1].strip() if len(hg19_parts) > 1 else ''
-        else:
-            hg19_ref = str(source_alleles) if pd.notna(source_alleles) else ''
-            hg19_alt = ''
-        
-        # Extract hg38 REF/ALT from cached bcftools data
-        hg38_ref = row.get('bcftools_hg38_ref', '')
-        hg38_alt = row.get('bcftools_hg38_alt', '')
-        
-        return hg19_ref, hg19_alt, hg38_ref, hg38_alt
-    
-    # Extract genotypes for all rows
-    genotype_data = df.apply(extract_genotypes_from_cached_data, axis=1, result_type='expand')
-    genotype_data.columns = ['hg19_ref', 'hg19_alt', 'hg38_ref', 'hg38_alt']
-    
-    output_df['GT_hg19'] = genotype_data['hg19_ref'] + '/' + genotype_data['hg19_alt']
-    output_df['GT_hg38'] = genotype_data['hg38_ref'] + '/' + genotype_data['hg38_alt']
+   # GT creation using direct data sources
+    output_df['GT_hg19'] = df['source_alleles'].fillna('')
+
+    # For hg38, combine bcftools ref/alt
+    def create_hg38_gt(row):
+        ref = row.get('bcftools_hg38_ref', '')
+        alt = row.get('bcftools_hg38_alt', '')
+        if pd.notna(ref) and pd.notna(alt) and ref != '' and alt != '':
+            return f"{ref}/{alt}"
+        return ''
+
+    output_df['GT_hg38'] = df.apply(create_hg38_gt, axis=1)
     output_df['Mapping_Status'] = df['mapping_status']
     
     output_df['Position_hg38_CrossMap'] = safe_int_convert(df['liftover_hg38_pos'])
@@ -236,21 +218,26 @@ def format_for_excel(df):
     output_df['PolyPhen_Change'] = df['polyphen_change'].fillna('')
 
     # HGVSc Analysis Columns
-    output_df['HGVSc_hg19'] = df['hg19_hgvsc_canonical'].fillna('')
-    output_df['HGVSc_hg38'] = df['hg38_hgvsc_canonical'].fillna('')
-    output_df['HGVSc_Match'] = (df['hgvsc_perfect_matches'] > 0).map({True: 'YES', False: 'NO'})
-    output_df['HGVSc_Matched_Transcripts'] = df['hgvsc_perfect_matches'].fillna(0)
-    output_df['HGVSc_Mismatched_Transcripts'] = df['hgvsc_mismatches'].fillna(0)
-    output_df['HGVSc_Match_Details'] = df['hgvsc_match_summary'].fillna('')
+    output_df['HGVSc_CANONICAL_hg19'] = df['hg19_canonical_hgvsc'].fillna('')
+    output_df['HGVSc_CANONICAL_hg38'] = df['hg38_canonical_hgvsc'].fillna('')
+    output_df['HGVSc_rest_hg19'] = df['hg19_rest_hgvsc'].fillna('')
+    output_df['HGVSc_rest_hg38'] = df['hg38_rest_hgvsc'].fillna('')
+    output_df['Tx_Count_hg19'] = df['hg19_transcript_count'].fillna(0)
+    output_df['Tx_Count_hg38'] = df['hg38_transcript_count'].fillna(0)
+
+    # Matched transcript analysis
+    output_df['HGVSc_MATCHED_transcripts'] = df['matched_transcript_count'].fillna(0)
+    output_df['HGVSc_MATCHED_concordant'] = df['matched_hgvsc_concordant'].fillna('')
+    output_df['HGVSc_MATCHED_discordant'] = df['matched_hgvsc_discordant'].fillna('')
 
     # HGVSp for reference (no analysis yet)
- #   output_df['HGVSp_hg19'] = df['hg19_hgvsp_canonical'].fillna('')
- #   output_df['HGVSp_hg38'] = df['hg38_hgvsp_canonical'].fillna('')
+    output_df['HGVSp_CANONICAL_hg19'] = df['hg19_canonical_hgvsp'].fillna('')
+    output_df['HGVSp_CANONICAL_hg38'] = df['hg38_canonical_hgvsp'].fillna('')
 
-    # Canonical transcript info
-    output_df['CANONICAL_transcript_id'] = df['hgvsc_canonical_transcript'].fillna('')
-    output_df['CANONICAL_HGVSc_Match'] = df['hgvsc_canonical_match'].map({True: 'YES', False: 'NO'})
-    
+    # Canonical transcript info (build-specific)
+    output_df['CANONICAL_transcript_hg19'] = df['hg19_canonical_transcript'].fillna('')
+    output_df['CANONICAL_transcript_hg38'] = df['hg38_canonical_transcript'].fillna('')
+    output_df['CANONICAL_HGVSc_Match'] = df['hgvsc_canonical_match'].map({True: 'YES', False: 'NO'})    
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Genotype_Issue'] = (df['gt_match'] == 0).map({True: 'YES', False: 'NO'})
@@ -259,9 +246,6 @@ def format_for_excel(df):
     output_df['Has_Unmatched_Consequences'] = (df['unmatched_consequences'] > 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Clinical_Change'] = (df['clin_sig_change'] != '').map({True: 'YES', False: 'NO'})
     output_df['Has_Pathogenicity_Change'] = ((df['sift_change'] != '') | (df['polyphen_change'] != '')).map({True: 'YES', False: 'NO'})
-    # HGVSc summary flags
-    output_df['Has_HGVSc_Mismatch'] = (df['hgvsc_mismatches'] > 0).map({True: 'YES', False: 'NO'})
-    output_df['Perfect_CANONICAL_Match'] = df['hgvsc_canonical_match'].map({True: 'YES', False: 'NO'})
 
     print(f"Output dataframe created with {len(output_df)} rows")
     print("Sample output:")
@@ -299,39 +283,50 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'source_chrom': 'Chromosome',
         'source_pos': 'Position_hg19',
         'bcftools_hg38_pos': 'Position_hg38',
-        'source_alleles': 'Alleles',
+        'source_alleles': 'GT_hg19',
+        'GT_hg38': 'GT_hg38', 
+        'flip': 'Strand_Flip',      
+        'swap': 'Ref_Alt_Swap', 
         'hg19_gene': 'Gene_hg19',
         'hg38_gene': 'Gene_hg38',
+        'gene_changes': 'Gene_Changes',
+        'discordance_summary': 'Discordance_Summary',
         'hg19_clin_sig_normalized': 'Clinical_Significance_hg19',
         'hg38_clin_sig_normalized': 'Clinical_Significance_hg38',
+        'clin_sig_change': 'Clinical_Change_Direction',
         'hg19_impact': 'Impact_hg19',
         'hg38_impact': 'Impact_hg38',
+        'impact_changes': 'Impact_Changes',
         'hg19_high_impact_consequences': 'High_Impact_Consequences_hg19',  
         'hg38_high_impact_consequences': 'High_Impact_Consequences_hg38',  
         'hg19_sift': 'SIFT_hg19',
         'hg38_sift': 'SIFT_hg38',
         'hg19_polyphen': 'PolyPhen_hg19',
         'hg38_polyphen': 'PolyPhen_hg38',
-        'hg19_hgvsc_canonical': 'HGVSc_hg19',
-        'hg38_hgvsc_canonical': 'HGVSc_hg38', 
-        'hgvsc_perfect_matches': 'HGVSc_Matched_Transcripts',
-        'hgvsc_mismatches': 'HGVSc_Mismatched_Transcripts',
-        'hgvsc_match_summary': 'HGVSc_Match_Details',
-        'hg19_hgvsp_canonical': 'HGVSp_hg19',
-        'hg38_hgvsp_canonical': 'HGVSp_hg38',
-        'hgvsc_canonical_transcript': 'CANONICAL_transcript_id',
-        'hgvsc_canonical_match': 'CANONICAL_HGVSc_Match',
-        'discordance_summary': 'Discordance_Summary',
+        'sift_change': 'SIFT_Change',
+        'polyphen_change': 'PolyPhen_Change',
         'transcript_relationship': 'Transcript_Relationship',
+        'hg19_transcript_count': 'Tx_Count_hg19',
+        'hg38_transcript_count': 'Tx_Count_hg38',
+        # Enhanced HGVSc columns
+        'hg19_canonical_transcript': 'CANONICAL_transcript_hg19',
+        'hg38_canonical_transcript': 'CANONICAL_transcript_hg38',
+        'hgvsc_canonical_match': 'CANONICAL_HGVSc_Match',
+        'hg19_canonical_hgvsc': 'HGVSc_CANONICAL_hg19',
+        'hg38_canonical_hgvsc': 'HGVSc_CANONICAL_hg38',
+        'hg19_hgvsp_canonical': 'HGVSp_CANONICAL_hg19', 
+        'hg38_hgvsp_canonical': 'HGVSp_CANONICAL_hg38',
+        'hg19_rest_hgvsc': 'HGVSc_rest_hg19',
+        'hg38_rest_hgvsc': 'HGVSc_rest_hg38',
+        # Matched transcript analysis
+        'matched_transcript_count': 'HGVSc_MATCHED_transcripts',
+        'matched_hgvsc_concordant': 'HGVSc_MATCHED_concordant',
+        'matched_hgvsc_discordant': 'HGVSc_MATCHED_discordant',
         'consequence_relationship': 'Consequence_Relationship',
+        'consequence_change': 'Consequence_Change',
         'problematic_transcripts_hg19': 'Problematic_Transcripts_hg19',
         'problematic_transcripts_hg38': 'Problematic_Transcripts_hg38',
         'same_transcript_consequence_changes': 'Transcript_Changes',
-        'gene_changes': 'Gene_Changes',
-        'impact_changes': 'Impact_Changes',
-        'clin_sig_change': 'Clinical_Change_Direction',
-        'sift_change': 'SIFT_Change',
-        'polyphen_change': 'PolyPhen_Change',
         'pos_match': 'Position_Match',
         'gt_match': 'Genotype_Match',
         'mapping_status': 'Mapping_Status',

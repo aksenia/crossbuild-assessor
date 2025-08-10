@@ -17,7 +17,25 @@ PLOT_COLORS = {
     'discordance': ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4', '#9467bd', 
                    '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22'],
     
-    # Clinical transitions
+    # Clinical transitions (NEW - for Plot 2 and Plot 3)
+    'clinical_transitions': {
+        # Stable categories - blues/grays
+        'stable': '#1f77b4',      # Blue for all stable categories
+        'stable_none': '#7f7f7f',  # Gray for stable NONE
+        
+        # Pathogenic transitions - reds  
+        'to_pathogenic': '#d62728',     # Red for → PATHOGENIC
+        'from_pathogenic': '#ff7f0e',   # Orange for FROM PATHOGENIC →
+        
+        # Benign transitions - greens
+        'to_benign': '#2ca02c',         # Green for → BENIGN  
+        'from_benign': '#17becf',       # Cyan for FROM BENIGN →
+        
+        # Other transitions - purple
+        'other': '#9467bd'              # Purple for Other Transitions
+    },
+    
+    # Keep existing transitions for backward compatibility
     'transitions': ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4', '#9467bd', 
                    '#8c564b', '#e377c2']
 }
@@ -93,6 +111,17 @@ PLOT_CONFIGS = {
         'xlabel': 'Clinical Evidence Transition',
         'ylabel': 'Variant Count',
         'show_counts': True
+    },
+
+    'canonical_hgvsc_match': {
+        'title': 'CANONICAL HGVSc Match vs Clinical Changes\n(Stacked by Clinical Direction)',
+        'xlabel': 'CANONICAL HGVSc Match',
+        'ylabel': 'Variant Count',
+        'stacked': True,
+        'legend_position': (1.05, 1),
+        'legend_location': 'upper left',
+        'xticklabels': ['NO', 'YES'],
+        'rotation': 0
     }
 }
 

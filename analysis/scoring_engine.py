@@ -246,5 +246,35 @@ class ClinicalScorer:
             variant_info['discordance_summary'] = '; '.join(discordance_summary) if discordance_summary else 'Technical issues only'
             
             scored_variants.append(variant_info)
-        
-        return pd.DataFrame(scored_variants)
+
+        # Create the initial dataframe
+        result_df = pd.DataFrame(scored_variants)
+
+        # Add CANONICAL_HGVSc_Match column for plotting
+        result_df['CANONICAL_HGVSc_Match'] = result_df['hgvsc_canonical_match'].map({
+            True: 'YES', 
+            False: 'NO'
+        }).fillna('NO')
+
+        # Add Clinical_Change_Direction column using same categorization as Plot 3
+        def categorize_clin_sig_transition_for_plotting(row):
+            """Reuse the same categorization logic as Plot 3"""
+            hg19 = row.get('hg19_clin_sig_normalized', '')
+            hg38 = row.get('hg38_clin_sig_normalized', '')
+            
+            if hg19 == hg38:
+                return f'Stable {hg19}' if hg19 else 'Stable NONE'
+            elif hg38 == 'PATHOGENIC':
+                return '→ PATHOGENIC'
+            elif hg19 == 'PATHOGENIC':
+                return 'FROM PATHOGENIC →'
+            elif hg38 == 'BENIGN':
+                return '→ BENIGN'
+            elif hg19 == 'BENIGN':
+                return 'FROM BENIGN →'
+            else:
+                return 'Other Transitions'
+
+        result_df['Clinical_Change_Direction'] = result_df.apply(categorize_clin_sig_transition_for_plotting, axis=1)
+
+        return result_df

@@ -294,7 +294,7 @@ class VEPAnalyzer:
             transcript_relationship = 'no_transcripts'
             consequence_relationship = 'no_consequences'
         
-        # FIXED: Get representative VEP information with proper fallbacks
+        # Get representative VEP information with proper fallbacks
         # Priority: transcript data > any annotation data > empty string
         def get_best_gene(transcripts_df, annotations_df):
             """Get the best available gene symbol with proper fallback"""
@@ -472,7 +472,8 @@ class VEPAnalyzer:
         vep_analysis.update({
             'hgvsc_perfect_matches': len(hgvsc_analysis['perfect_matches']),
             'hgvsc_mismatches': len(hgvsc_analysis['mismatches']), 
-            'hgvsc_canonical_transcript': hgvsc_analysis['canonical_transcript'] or '',
+            'hg19_canonical_transcript': hgvsc_analysis.get('hg19_canonical_transcript', ''),
+            'hg38_canonical_transcript': hgvsc_analysis.get('hg38_canonical_transcript', ''),
             'hgvsc_canonical_match': hgvsc_analysis['canonical_hgvsc_match'],
             'hgvsc_match_summary': hgvsc_analysis['summary'],
             'hgvsc_high_impact_matches': hgvsc_analysis['high_impact_matches'],
@@ -481,7 +482,15 @@ class VEPAnalyzer:
             'hg19_hgvsc_canonical': hgvsc_analysis['hg19_canonical_hgvsc'],
             'hg38_hgvsc_canonical': hgvsc_analysis['hg38_canonical_hgvsc'],
             'hg19_hgvsp_canonical': hgvsc_analysis['hg19_canonical_hgvsp'],
-            'hg38_hgvsp_canonical': hgvsc_analysis['hg38_canonical_hgvsp']
+            'hg38_hgvsp_canonical': hgvsc_analysis['hg38_canonical_hgvsp'],
+
+            'hg19_rest_hgvsc': hgvsc_analysis['hg19_rest_hgvsc'],
+            'hg38_rest_hgvsc': hgvsc_analysis['hg38_rest_hgvsc'],
+            'hg19_transcript_count': hgvsc_analysis['hg19_transcript_count'],
+            'hg38_transcript_count': hgvsc_analysis['hg38_transcript_count'],
+            'matched_transcript_count': hgvsc_analysis['matched_transcript_count'],
+            'matched_hgvsc_concordant': hgvsc_analysis['matched_hgvsc_concordant'],
+            'matched_hgvsc_discordant': hgvsc_analysis['matched_hgvsc_discordant']
         })
   
         return vep_analysis

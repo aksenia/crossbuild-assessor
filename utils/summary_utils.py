@@ -26,8 +26,16 @@ class SummaryDataCalculator:
             SELECT AVG(gt_match) as rate FROM comparison
         """, conn).iloc[0]['rate']
         
-        # For liftover QC, concordant = position match (primary concern)
-        concordant_variants = int(pos_match_rate * total_variants) if pos_match_rate else 0
+        # Calculate proper concordant/discordant variants (non-redundant)
+        both_match_query = """
+            SELECT COUNT(*) as count 
+            FROM comparison 
+            WHERE pos_match = 1 AND gt_match = 1
+        """
+        both_match_result = pd.read_sql_query(both_match_query, conn)
+        concordant_variants = both_match_result.iloc[0]['count']
+
+        # Discordant = any mismatch (position OR genotype OR both) - non-redundant
         discordant_variants = total_variants - concordant_variants
         
         # Calculate percentages
@@ -135,7 +143,8 @@ class SummaryDataCalculator:
             "quality_summary": {
                 "position_mismatches": total_variants - int(pos_match_rate * total_variants) if pos_match_rate < 1.0 else 0,
                 "genotype_mismatches": total_variants - int(gt_match_rate * total_variants) if gt_match_rate < 1.0 else 0,
-                "coordinate_discrepancies": len(diff_df)
+                "coordinate_discrepancies": len(diff_df),
+                "any_mismatch": discordant_variants 
             },
             "match_categories": {
                 "both_match": {
@@ -245,7 +254,7 @@ class SummaryDataCalculator:
                     else:
                         return 'MODERATE'
                 
-                # FIXED: Create ordered list of directional changes
+                # Create ordered list of directional changes
                 directional_changes_list = []
                 for (hg19_cat, hg38_cat), count in transition_counts.items():
                     clinical_priority = get_clinical_priority(hg19_cat, hg38_cat)
@@ -296,14 +305,14 @@ class SummaryDataCalculator:
                 "transitions": impact_changes
             }
         
-        # Clinical coverage analysis - FIXED prediction coverage calculation
+        # Clinical coverage analysis 
         clinical_coverage = {}
         if len(df_full) > 0 and 'hg19_clin_sig_normalized' in df_full.columns:
             # Build-specific counts with ordered categories
             hg19_counts = df_full['hg19_clin_sig_normalized'].value_counts().to_dict()
             hg38_counts = df_full['hg38_clin_sig_normalized'].value_counts().to_dict()
             
-            # FIXED: Order categories by clinical interest
+            # Order categories by clinical interest
             category_order = ['PATHOGENIC', 'BENIGN', 'VUS', 'RISK', 'DRUG_RESPONSE', 'PROTECTIVE', 'OTHER', 'NONE']
             
             # Calculate differences between builds in order
@@ -335,7 +344,7 @@ class SummaryDataCalculator:
             has_any_clin = ((df_full['hg19_clin_sig_normalized'] != 'NONE') | 
                            (df_full['hg38_clin_sig_normalized'] != 'NONE')).sum()
             
-            # FIXED: Pathogenicity predictions - properly exclude missing values including "-"
+            # Pathogenicity predictions - properly exclude missing values including "-"
             has_sift_hg19 = (df_full['hg19_sift'] != '') & (df_full['hg19_sift'] != '-') & (df_full['hg19_sift'].notna())
             has_sift_hg38 = (df_full['hg38_sift'] != '') & (df_full['hg38_sift'] != '-') & (df_full['hg38_sift'].notna())
             has_polyphen_hg19 = (df_full['hg19_polyphen'] != '') & (df_full['hg19_polyphen'] != '-') & (df_full['hg19_polyphen'].notna())
@@ -371,6 +380,70 @@ class SummaryDataCalculator:
                 }
             }
         
+        # HGVS analysis 
+        hgvs_analysis = {}
+        if len(df_full) > 0:
+            # CANONICAL HGVSc Match Rate
+            if 'CANONICAL_HGVSc_Match' in df_full.columns:
+                canonical_match_yes = (df_full['CANONICAL_HGVSc_Match'] == 'YES').sum()
+                canonical_match_rate = round(canonical_match_yes / len(df_full) * 100, 1)
+            else:
+                canonical_match_yes = 0
+                canonical_match_rate = 0
+            
+            # Matched transcripts statistics
+            if 'matched_transcript_count' in df_full.columns:
+                matched_transcript_counts = df_full['matched_transcript_count'].fillna(0)
+                avg_matched_transcripts = round(matched_transcript_counts.mean(), 1)
+                total_matched_transcripts = matched_transcript_counts.sum()
+            else:
+                avg_matched_transcripts = 0
+                total_matched_transcripts = 0
+            
+            # Concordant HGVS Rate (among variants with matched transcripts)
+            if 'matched_hgvsc_concordant' in df_full.columns and 'matched_hgvsc_discordant' in df_full.columns:
+                # Count concordant and discordant matches
+                def count_hgvsc_items(series):
+                    """Count items in comma-separated lists, handling empty/NaN values"""
+                    if pd.isna(series):
+                        return 0
+                    items = str(series).strip()
+                    if items == '' or items == '-':
+                        return 0
+                    return len([item.strip() for item in items.split(',') if item.strip()])
+                
+                concordant_counts = df_full['matched_hgvsc_concordant'].apply(count_hgvsc_items)
+                discordant_counts = df_full['matched_hgvsc_discordant'].apply(count_hgvsc_items)
+                
+                total_concordant = concordant_counts.sum()
+                total_discordant = discordant_counts.sum()
+                total_matched_hgvsc = total_concordant + total_discordant
+                
+                concordant_hgvs_rate = round(total_concordant / total_matched_hgvsc * 100, 1) if total_matched_hgvsc > 0 else 0
+            else:
+                total_concordant = 0
+                total_discordant = 0
+                total_matched_hgvsc = 0
+                concordant_hgvs_rate = 0
+            
+            hgvs_analysis = {
+                "canonical_match": {
+                    "variants_with_match": canonical_match_yes,
+                    "match_rate_percentage": canonical_match_rate,
+                    "total_variants": len(df_full)
+                },
+                "matched_transcripts": {
+                    "average_per_variant": avg_matched_transcripts,
+                    "total_matched": int(total_matched_transcripts)
+                },
+                "hgvsc_concordance": {
+                    "total_concordant": int(total_concordant),
+                    "total_discordant": int(total_discordant),
+                    "total_compared": int(total_matched_hgvsc),
+                    "concordant_rate_percentage": concordant_hgvs_rate
+                }
+            }
+
         # Functional discordances
         functional_discordances = {}
         if len(df_full) > 0:
@@ -422,6 +495,7 @@ class SummaryDataCalculator:
             "clinical_transitions": clinical_transitions,
             "impact_transitions": impact_transitions,
             "clinical_coverage": clinical_coverage,
+            "hgvs_analysis": hgvs_analysis,
             "functional_discordances": functional_discordances,
             "top_variants_summary": top_variants_summary
         }

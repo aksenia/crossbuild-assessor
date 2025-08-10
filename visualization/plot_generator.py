@@ -24,6 +24,7 @@ class PrioritizationPlotter:
         """
         self.colors_priority = plot_colors['priority']
         self.colors_clinical = plot_colors['clinical']
+        self.plot_colors = plot_colors
         self.figure_config = figure_config
         
         # Build-specific colors (colorblind friendly)
@@ -41,16 +42,16 @@ class PrioritizationPlotter:
         )
         fig.suptitle('Discrepant Variant Prioritization Analysis', fontsize=16, fontweight='bold')
         
-        # PLOT 1: Clinical Evidence Distribution by Build (NEW)
+        # PLOT 1: Clinical Evidence Distribution by Build 
         self._plot_clinical_evidence_by_build(df, axes[0,0])
         
-        # PLOT 2: Impact Transitions with Grouping (REDESIGNED)
-        self._plot_impact_transitions_grouped(df, axes[0,1])
+        # PLOT 2: CANONICAL HGVSc Match vs Clinical Changes 
+        self._plot_canonical_hgvsc_match(df, axes[0,1])
         
-        # PLOT 3: Clinical Significance Transitions with Grouping (REDESIGNED)
+        # PLOT 3: Clinical Significance Transitions with Grouping 
         self._plot_clinical_significance_transitions_grouped(df, axes[1,0])
         
-        # PLOT 4: Primary Discordance Types (MOVED, UNCHANGED LOGIC)
+        # PLOT 4: Primary Discordance Types 
         self._plot_discordance_types(df, axes[1,1])
         
         plt.tight_layout()
@@ -119,6 +120,85 @@ class PrioritizationPlotter:
             ax.text(0.5, 0.5, 'No clinical significance\ndata available', ha='center', va='center',
                       fontsize=12, transform=ax.transAxes)
             ax.set_title('Clinical Evidence Distribution by Build', fontsize=12, fontweight='bold')
+
+
+    def _plot_canonical_hgvsc_match(self, df, ax):
+        """Plot 2: CANONICAL HGVSc Match vs Clinical Changes (NEW)"""
+        print("2. Creating CANONICAL HGVSc Match vs Clinical Changes...")
+        
+        if len(df) > 0 and 'CANONICAL_HGVSc_Match' in df.columns and 'Clinical_Change_Direction' in df.columns:
+            # Create contingency table
+            match_clinical_crosstab = pd.crosstab(
+                df['CANONICAL_HGVSc_Match'], 
+                df['Clinical_Change_Direction']
+            )
+            
+            # Order clinical change categories (same as Plot 3)
+            stable_categories = [col for col in match_clinical_crosstab.columns if col.startswith('Stable')]
+            stable_categories.sort()
+            
+            category_order = stable_categories + [
+                '→ PATHOGENIC', 'FROM PATHOGENIC →',
+                '→ BENIGN', 'FROM BENIGN →',
+                'Other Transitions'
+            ]
+            
+            # Reorder columns to match category order
+            ordered_columns = [cat for cat in category_order if cat in match_clinical_crosstab.columns]
+            match_clinical_crosstab = match_clinical_crosstab.reindex(columns=ordered_columns, fill_value=0)
+            
+            if len(ordered_columns) > 0:
+                # Color coding using visualization config
+                colors = []
+                clinical_colors = self.plot_colors.get('clinical_transitions', {})
+
+                for cat in ordered_columns:
+                    if cat.startswith('Stable'):
+                        if 'NONE' in cat:
+                            colors.append(clinical_colors.get('stable_none', '#7f7f7f'))
+                        else:
+                            colors.append(clinical_colors.get('stable', '#1f77b4'))
+                    elif cat == '→ PATHOGENIC':
+                        colors.append(clinical_colors.get('to_pathogenic', '#d62728'))
+                    elif cat == 'FROM PATHOGENIC →':
+                        colors.append(clinical_colors.get('from_pathogenic', '#ff7f0e'))
+                    elif cat == '→ BENIGN':
+                        colors.append(clinical_colors.get('to_benign', '#2ca02c'))
+                    elif cat == 'FROM BENIGN →':
+                        colors.append(clinical_colors.get('from_benign', '#17becf'))
+                    else:
+                        colors.append(clinical_colors.get('other', '#9467bd'))
+                
+                # Create stacked bar plot
+                match_clinical_crosstab.plot(
+                    kind='bar',
+                    ax=ax,
+                    color=colors,
+                    stacked=True,
+                    width=0.7
+                )
+                
+                ax.set_xlabel('CANONICAL HGVSc Match', fontweight='bold')
+                ax.set_ylabel('Variant Count', fontweight='bold')
+                ax.set_title('CANONICAL HGVSc Match vs Clinical Changes\n(Stacked by Clinical Direction)', 
+                            fontsize=12, fontweight='bold')
+                ax.set_xticklabels(['NO', 'YES'], rotation=0)
+                ax.legend(title='Clinical Change Direction', bbox_to_anchor=(1.05, 1), loc='upper left')
+                ax.grid(True, alpha=0.3, axis='y')
+                
+                # Add count labels on bars
+                for container in ax.containers:
+                    ax.bar_label(container, fmt='%d', label_type='center', fontweight='bold', color='white')
+            else:
+                ax.text(0.5, 0.5, 'No clinical change\ndata available', ha='center', va='center',
+                        fontsize=12, transform=ax.transAxes)
+                ax.set_title('CANONICAL HGVSc Match vs Clinical Changes\n(Stacked by Clinical Direction)', 
+                            fontsize=12, fontweight='bold')
+        else:
+            ax.text(0.5, 0.5, 'Required columns not\navailable in data', ha='center', va='center',
+                    fontsize=12, transform=ax.transAxes)
+            ax.set_title('CANONICAL HGVSc Match vs Clinical Changes\n(Stacked by Clinical Direction)', 
+                        fontsize=12, fontweight='bold')
     
     def _plot_impact_transitions_grouped(self, df, ax):
         """Plot 2: Impact transitions with grouping (REDESIGNED)"""
