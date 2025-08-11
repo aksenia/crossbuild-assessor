@@ -277,4 +277,20 @@ class ClinicalScorer:
 
         result_df['Clinical_Change_Direction'] = result_df.apply(categorize_clin_sig_transition_for_plotting, axis=1)
 
+        # ADD HGVS COLUMNS:
+        if 'matched_transcript_count' in result_df.columns:
+            result_df['HGVSc_MATCHED_transcripts'] = result_df['matched_transcript_count']
+        else:
+            result_df['HGVSc_MATCHED_transcripts'] = 0
+
+        if 'matched_hgvsc_concordant' in result_df.columns:
+            result_df['HGVSc_MATCHED_concordant'] = result_df['matched_hgvsc_concordant']
+        else:
+            result_df['HGVSc_MATCHED_concordant'] = ''
+
+        if 'matched_hgvsc_discordant' in result_df.columns:
+            result_df['HGVSc_MATCHED_discordant'] = result_df['matched_hgvsc_discordant']
+        else:
+            result_df['HGVSc_MATCHED_discordant'] = ''
+
         return result_df
