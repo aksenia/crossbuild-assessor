@@ -240,7 +240,7 @@ def format_for_excel(df):
     # Canonical transcript info (build-specific)
     output_df['CANONICAL_transcript_hg19'] = df['hg19_canonical_transcript'].fillna('')
     output_df['CANONICAL_transcript_hg38'] = df['hg38_canonical_transcript'].fillna('')
-    output_df['CANONICAL_HGVSc_Match'] = df['hgvsc_canonical_match'].map({True: 'YES', False: 'NO'})    
+    output_df['CANONICAL_HGVSc_Match'] = df['CANONICAL_HGVSc_Match'].fillna('NO')  
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Genotype_Issue'] = (df['gt_match'] == 0).map({True: 'YES', False: 'NO'})
@@ -308,7 +308,7 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         # Enhanced HGVSc columns
         'hg19_canonical_transcript': 'CANONICAL_transcript_hg19',
         'hg38_canonical_transcript': 'CANONICAL_transcript_hg38',
-        'hgvsc_canonical_match': 'CANONICAL_HGVSc_Match',
+        'CANONICAL_HGVSc_Match': 'CANONICAL_HGVSc_Match',
         'hg19_canonical_hgvsc': 'HGVSc_CANONICAL_hg19',
         'hg38_canonical_hgvsc': 'HGVSc_CANONICAL_hg38',
         'hg19_hgvsp_canonical': 'HGVSp_CANONICAL_hg19', 

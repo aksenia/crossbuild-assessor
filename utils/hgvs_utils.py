@@ -378,20 +378,36 @@ def analyze_transcript_hgvsp_matches(hg19_tx_data, hg38_tx_data):
         else:  # parse_error or missing_data
             parse_errors.append((tx_id, hg19_hgvsp, hg38_hgvsp, details))
     
-    # Create concordant/discordant lists for HGVSp
+    # Create concordant/discordant lists for HGVSp - EXTRACT NP IDs
     matched_concordant_list = []
     matched_discordant_list = []
     
     for tx_id, hg19_hgvsp, hg38_hgvsp, details in perfect_matches:
-        # Extract just the HGVSp part (remove protein prefix if present)
-        hgvsp_clean = hg19_hgvsp.split(':')[-1] if ':' in hg19_hgvsp else hg19_hgvsp
-        matched_concordant_list.append(f"{tx_id}({hgvsp_clean})")
+        # Extract NP ID from HGVSp string instead of using transcript ID
+        if ':' in hg19_hgvsp:
+            np_id = hg19_hgvsp.split(':')[0]  # "NP_001005484.2"
+            hgvsp_clean = hg19_hgvsp.split(':')[-1]  # "p.Glu36Gly"
+        else:
+            np_id = tx_id  # fallback
+            hgvsp_clean = hg19_hgvsp
+        
+        matched_concordant_list.append(f"{np_id}({hgvsp_clean})")
     
     for tx_id, hg19_hgvsp, hg38_hgvsp, details in mismatches:
-        # Extract clean HGVSp parts
-        hg19_clean = hg19_hgvsp.split(':')[-1] if ':' in hg19_hgvsp else hg19_hgvsp
-        hg38_clean = hg38_hgvsp.split(':')[-1] if ':' in hg38_hgvsp else hg38_hgvsp
-        matched_discordant_list.append(f"{tx_id}({hg19_clean}→{hg38_clean})")
+        # Extract NP IDs and clean HGVSp parts
+        if ':' in hg19_hgvsp:
+            np_id = hg19_hgvsp.split(':')[0]
+            hg19_clean = hg19_hgvsp.split(':')[-1]
+        else:
+            np_id = tx_id
+            hg19_clean = hg19_hgvsp
+            
+        if ':' in hg38_hgvsp:
+            hg38_clean = hg38_hgvsp.split(':')[-1]
+        else:
+            hg38_clean = hg38_hgvsp
+            
+        matched_discordant_list.append(f"{np_id}({hg19_clean}→{hg38_clean})")
     
     return {
         'matched_transcript_count': len(perfect_matches) + len(mismatches),
