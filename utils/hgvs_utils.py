@@ -48,37 +48,36 @@ def normalize_hgvs_string(hgvs_string):
 
 
 def compare_hgvsc_strings(hgvsc1, hgvsc2):
-    """
-    Compare two HGVSc strings using hgvs library normalization
-    
-    Returns:
-        tuple: (match_result, details)
-        match_result: 'concordant', 'discordant', 'parse_error', 'missing_data'
-        details: str with comparison details
-    """
     if pd.isna(hgvsc1) or pd.isna(hgvsc2):
-        return 'missing_data', 'One or both HGVSc values missing'
+        return 'missing_data', 'missing values'
     
     if hgvsc1 == '' or hgvsc2 == '' or hgvsc1 == '-' or hgvsc2 == '-':
-        return 'missing_data', 'One or both HGVSc values empty'
+        return 'missing_data', 'empty values'
     
-    # Normalize both strings
-    norm1, success1, error1 = normalize_hgvs_string(hgvsc1)
-    norm2, success2, error2 = normalize_hgvs_string(hgvsc2)
-    
-    # If either failed to parse, fall back to string comparison
-    if not success1 or not success2:
-        simple_match = str(hgvsc1).strip() == str(hgvsc2).strip()
-        if simple_match:
-            return 'concordant', f'String match (parse issues: {error1 or error2})'
+    try:
+        parser = get_hgvs_parser()
+        
+        # Parse both HGVS strings
+        var1 = parser.parse_hgvs_variant(str(hgvsc1).strip())
+        var2 = parser.parse_hgvs_variant(str(hgvsc2).strip())
+        
+        # Compare transcript base (without version) and variant
+        # var1.ac = "NM_181798.2", var1.posedit = "479C>T"
+        transcript1_base = var1.ac.split('.')[0] if '.' in var1.ac else var1.ac
+        transcript2_base = var2.ac.split('.')[0] if '.' in var2.ac else var2.ac
+        
+        # Compare base transcript + variant change
+        if transcript1_base == transcript2_base and str(var1.posedit) == str(var2.posedit):
+            return 'concordant', 'match'
         else:
-            return 'parse_error', f'Parse failed: {error1}, {error2}'
-    
-    # Compare normalized strings
-    if norm1 == norm2:
-        return 'concordant', f'Normalized match: {norm1}'
-    else:
-        return 'discordant', f'Normalized mismatch: {norm1} vs {norm2}'
+            return 'discordant', 'mismatch'
+            
+    except Exception:
+        # Fallback to string comparison if parsing fails
+        if str(hgvsc1).strip() == str(hgvsc2).strip():
+            return 'concordant', 'match'
+        else:
+            return 'discordant', 'parse failed'
 
 
 def extract_transcript_from_hgvs(hgvs_string):
