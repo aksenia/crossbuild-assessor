@@ -432,24 +432,32 @@ class ReportGenerator:
                 {% endfor %}
             </div>
 
-            <!-- HGVS NOMENCLATURE ANALYSIS  -->
+            <!-- HGVS NOMENCLATURE ANALYSIS (UPDATED) -->
             <h3>HGVS nomenclature analysis</h3>
             <div class="metrics-grid">
                 <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'canonical_match', 'match_rate_percentage']) }}%</div>
-                    <div class="metric-label">CANONICAL HGVSc Match Rate</div>
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'canonical_hgvsc_match', 'match_rate_percentage']) }}%</div>
+                    <div class="metric-label">Canonical HGVSc Match Rate</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'canonical_hgvsp_match', 'match_rate_percentage']) }}%</div>
+                    <div class="metric-label">Canonical HGVSp Match Rate</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsc_concordance', 'concordant_rate_percentage']) }}%</div>
-                    <div class="metric-label">Concordant HGVSc Rate</div>
+                    <div class="metric-label">HGVSc Concordance Rate</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'matched_transcripts', 'average_per_variant']) }}</div>
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsp_concordance', 'concordant_rate_percentage']) }}%</div>
+                    <div class="metric-label">HGVSp Concordance Rate</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'matched_transcripts', 'hgvsc_average_per_variant']) }}</div>
                     <div class="metric-label">Avg HGVSc-Matched Transcripts</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsc_concordance', 'total_compared']) }}</div>
-                    <div class="metric-label">Total HGVSc Comparisons</div>
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'matched_transcripts', 'hgvsp_average_per_variant']) }}</div>
+                    <div class="metric-label">Avg HGVSp-Matched Transcripts</div>
                 </div>
             </div>
 
@@ -586,110 +594,160 @@ class ReportGenerator:
                                     <span class="clinical-change">{{ gene_hg19 }} → {{ gene_hg38 }}</span>
                                 {% endif %}
                             </td>
-                            <!-- HGVS Matches with summary + discordant details + HGVS grouping -->
+                            <!-- HGVS Matches with HGVSp priority + grouping + clear labeling -->
                             <td style="font-size: 10px; max-width: 250px; vertical-align: top; line-height: 1.2;">
-                                {% set concordant_raw = variant.get('HGVSc_MATCHED_concordant', '') %}
-                                {% set discordant_raw = variant.get('HGVSc_MATCHED_discordant', '') %}
+                                {% set hgvsc_concordant_raw = variant.get('HGVSc_MATCHED_concordant', '') %}
+                                {% set hgvsc_discordant_raw = variant.get('HGVSc_MATCHED_discordant', '') %}
+                                {% set hgvsp_concordant_raw = variant.get('HGVSp_MATCHED_concordant', '') %}
+                                {% set hgvsp_discordant_raw = variant.get('HGVSp_MATCHED_discordant', '') %}
                                 
                                 {# Convert to string and handle NaN/float values #}
-                                {% set concordant = concordant_raw | string if concordant_raw is not none else '' %}
-                                {% set discordant = discordant_raw | string if discordant_raw is not none else '' %}
+                                {% set hgvsc_concordant = hgvsc_concordant_raw | string if hgvsc_concordant_raw is not none else '' %}
+                                {% set hgvsc_discordant = hgvsc_discordant_raw | string if hgvsc_discordant_raw is not none else '' %}
+                                {% set hgvsp_concordant = hgvsp_concordant_raw | string if hgvsp_concordant_raw is not none else '' %}
+                                {% set hgvsp_discordant = hgvsp_discordant_raw | string if hgvsp_discordant_raw is not none else '' %}
                                 
                                 {# Clean up values #}
-                                {% set concordant = '' if concordant in ['', '-', 'nan'] else concordant %}
-                                {% set discordant = '' if discordant in ['', '-', 'nan'] else discordant %}
+                                {% set hgvsc_concordant = '' if hgvsc_concordant in ['', '-', 'nan'] else hgvsc_concordant %}
+                                {% set hgvsc_discordant = '' if hgvsc_discordant in ['', '-', 'nan'] else hgvsc_discordant %}
+                                {% set hgvsp_concordant = '' if hgvsp_concordant in ['', '-', 'nan'] else hgvsp_concordant %}
+                                {% set hgvsp_discordant = '' if hgvsp_discordant in ['', '-', 'nan'] else hgvsp_discordant %}
                                 
-                                {# Parse concordant and discordant lists #}
-                                {% set concordant_items = [] %}
-                                {% set discordant_items = [] %}
+                                {# Parse HGVSc lists for summary #}
+                                {% set hgvsc_concordant_items = [] %}
+                                {% set hgvsc_discordant_items = [] %}
                                 
-                                {# Split on both commas and semicolons, then clean up #}
-                                {% if concordant %}
-                                    {% for item in concordant.replace(';', ',').split(',') %}
+                                {% if hgvsc_concordant %}
+                                    {% for item in hgvsc_concordant.replace(';', ',').split(',') %}
                                         {% set clean_item = item.strip() %}
                                         {% if clean_item and clean_item != '' %}
-                                            {% set _ = concordant_items.append(clean_item) %}
+                                            {% set _ = hgvsc_concordant_items.append(clean_item) %}
                                         {% endif %}
                                     {% endfor %}
                                 {% endif %}
                                 
-                                {% if discordant %}
-                                    {% for item in discordant.replace(';', ',').split(',') %}
+                                {% if hgvsc_discordant %}
+                                    {% for item in hgvsc_discordant.replace(';', ',').split(',') %}
                                         {% set clean_item = item.strip() %}
                                         {% if clean_item and clean_item != '' %}
-                                            {% set _ = discordant_items.append(clean_item) %}
+                                            {% set _ = hgvsc_discordant_items.append(clean_item) %}
                                         {% endif %}
                                     {% endfor %}
                                 {% endif %}
                                 
-                                {# Count canonical vs other #}
-                                {% set concordant_canonical_count = 0 %}
-                                {% set discordant_canonical_list = [] %}
-                                {% set discordant_other_list = [] %}
+                                {# Parse HGVSp lists for details #}
+                                {% set hgvsp_concordant_items = [] %}
+                                {% set hgvsp_discordant_items = [] %}
                                 
-                                {# Count concordant canonical #}
-                                {% for item in concordant_items %}
+                                {% if hgvsp_concordant %}
+                                    {% for item in hgvsp_concordant.replace(';', ',').split(',') %}
+                                        {% set clean_item = item.strip() %}
+                                        {% if clean_item and clean_item != '' %}
+                                            {% set _ = hgvsp_concordant_items.append(clean_item) %}
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endif %}
+                                
+                                {% if hgvsp_discordant %}
+                                    {% for item in hgvsp_discordant.replace(';', ',').split(',') %}
+                                        {% set clean_item = item.strip() %}
+                                        {% if clean_item and clean_item != '' %}
+                                            {% set _ = hgvsp_discordant_items.append(clean_item) %}
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endif %}
+                                
+                                {# Count canonical transcripts for HGVSc summary #}
+                                {% set hgvsc_concordant_canonical_count = 0 %}
+                                {% set hgvsc_discordant_canonical_count = 0 %}
+                                
+                                {% for item in hgvsc_concordant_items %}
                                     {% if 'NM_' in item %}
-                                        {% set concordant_canonical_count = concordant_canonical_count + 1 %}
+                                        {% set hgvsc_concordant_canonical_count = hgvsc_concordant_canonical_count + 1 %}
                                     {% endif %}
                                 {% endfor %}
                                 
-                                {# Separate discordant canonical vs other #}
-                                {% for item in discordant_items %}
+                                {% for item in hgvsc_discordant_items %}
                                     {% if 'NM_' in item %}
-                                        {% set _ = discordant_canonical_list.append(item) %}
+                                        {% set hgvsc_discordant_canonical_count = hgvsc_discordant_canonical_count + 1 %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {# Separate canonical vs other for details display #}
+                                {% set hgvsp_discordant_canonical = [] %}
+                                {% set hgvsp_discordant_other = [] %}
+                                {% set hgvsc_discordant_canonical = [] %}
+                                {% set hgvsc_discordant_other = [] %}
+                                
+                                {% for item in hgvsp_discordant_items %}
+                                    {% if 'NM_' in item %}
+                                        {% set _ = hgvsp_discordant_canonical.append(item) %}
                                     {% else %}
-                                        {% set _ = discordant_other_list.append(item) %}
+                                        {% set _ = hgvsp_discordant_other.append(item) %}
                                     {% endif %}
                                 {% endfor %}
                                 
-                                {# Group discordant canonical by identical HGVS #}
-                                {% set grouped_canonical = {} %}
-                                {% for item in discordant_canonical_list %}
+                                {% for item in hgvsc_discordant_items %}
+                                    {% if 'NM_' in item %}
+                                        {% set _ = hgvsc_discordant_canonical.append(item) %}
+                                    {% else %}
+                                        {% set _ = hgvsc_discordant_other.append(item) %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {# Group HGVSp canonical by identical HGVS changes #}
+                                {% set grouped_hgvsp_canonical = {} %}
+                                {% for item in hgvsp_discordant_canonical %}
                                     {% if '(' in item %}
                                         {% set tx_id = item.split('(')[0].strip() %}
                                         {% set hgvs_part = '(' + item.split('(')[1] %}
-                                        {% if hgvs_part in grouped_canonical %}
-                                            {% set current_txs = grouped_canonical[hgvs_part] %}
-                                            {% set _ = grouped_canonical.update({hgvs_part: current_txs + ', ' + tx_id}) %}
+                                        {% if hgvs_part in grouped_hgvsp_canonical %}
+                                            {% set current_txs = grouped_hgvsp_canonical[hgvs_part] %}
+                                            {% set _ = grouped_hgvsp_canonical.update({hgvs_part: current_txs + ', ' + tx_id}) %}
                                         {% else %}
-                                            {% set _ = grouped_canonical.update({hgvs_part: tx_id}) %}
+                                            {% set _ = grouped_hgvsp_canonical.update({hgvs_part: tx_id}) %}
                                         {% endif %}
                                     {% else %}
-                                        {# No parentheses - treat as unique #}
-                                        {% set _ = grouped_canonical.update({item: item}) %}
+                                        {% set _ = grouped_hgvsp_canonical.update({item: item}) %}
                                     {% endif %}
                                 {% endfor %}
                                 
-                                {# Group discordant other by identical HGVS #}
-                                {% set grouped_other = {} %}
-                                {% for item in discordant_other_list %}
+                                {# Group HGVSc canonical by identical HGVS changes #}
+                                {% set grouped_hgvsc_canonical = {} %}
+                                {% for item in hgvsc_discordant_canonical %}
                                     {% if '(' in item %}
                                         {% set tx_id = item.split('(')[0].strip() %}
                                         {% set hgvs_part = '(' + item.split('(')[1] %}
-                                        {% if hgvs_part in grouped_other %}
-                                            {% set current_txs = grouped_other[hgvs_part] %}
-                                            {% set _ = grouped_other.update({hgvs_part: current_txs + ', ' + tx_id}) %}
+                                        {% if hgvs_part in grouped_hgvsc_canonical %}
+                                            {% set current_txs = grouped_hgvsc_canonical[hgvs_part] %}
+                                            {% set _ = grouped_hgvsc_canonical.update({hgvs_part: current_txs + ', ' + tx_id}) %}
                                         {% else %}
-                                            {% set _ = grouped_other.update({hgvs_part: tx_id}) %}
+                                            {% set _ = grouped_hgvsc_canonical.update({hgvs_part: tx_id}) %}
                                         {% endif %}
                                     {% else %}
-                                        {# No parentheses - treat as unique #}
-                                        {% set _ = grouped_other.update({item: item}) %}
+                                        {% set _ = grouped_hgvsc_canonical.update({item: item}) %}
                                     {% endif %}
                                 {% endfor %}
                                 
-                                {% set concordant_other_count = (concordant_items | length) - concordant_canonical_count %}
-                                
-                                {% if concordant_items or discordant_items %}
-                                    <div class="{% if discordant_items %}clinical-change{% else %}clinical-stable{% endif %}">
-                                        {# Summary line #}
-                                        <strong>Summary:</strong> {{ concordant_items | length }} concordant ({{ concordant_canonical_count }} canonical), {{ discordant_items | length }} discordant ({{ discordant_canonical_list | length }} canonical)<br><br>
+                                {% if hgvsc_concordant_items or hgvsc_discordant_items %}
+                                    <div class="{% if hgvsc_discordant_items %}clinical-change{% else %}clinical-stable{% endif %}">
+                                        {# HGVSc Summary (as requested) #}
+                                        <strong>Summary:</strong> {{ hgvsc_concordant_items | length }} concordant ({{ hgvsc_concordant_canonical_count }} canonical), {{ hgvsc_discordant_items | length }} discordant ({{ hgvsc_discordant_canonical_count }} canonical)<br><br>
                                         
-                                        {# Discordant Canonical - grouped by HGVS #}
-                                        {% if grouped_canonical %}
-                                            <strong style="color: #c62828;">Discordant Canonical:</strong><br>
-                                            {% for hgvs_part, tx_list in grouped_canonical.items() %}
+                                        {# Details: HGVSp first (protein-level priority) with grouping #}
+                                        {% if grouped_hgvsp_canonical %}
+                                            <strong style="color: #c62828;">Discordant HGVSp:</strong><br>
+                                            {% for hgvs_part, tx_list in grouped_hgvsp_canonical.items() %}
+                                                <div style="margin-left: 4px; margin-top: 2px;">
+                                                    <span style="white-space: nowrap; font-weight: bold;">{{ tx_list }}</span><br>
+                                                    <span style="margin-left: 8px; word-break: break-all;">{{ hgvs_part | replace('→', '<br>&nbsp;&nbsp;&nbsp;&nbsp;→') | safe }}</span>
+                                                </div>
+                                            {% endfor %}
+                                            <br>
+                                        {% elif grouped_hgvsc_canonical %}
+                                            {# Fallback to HGVSc when no HGVSp available - with grouping #}
+                                            <strong style="color: #c62828;">Discordant HGVSc:</strong><br>
+                                            {% for hgvs_part, tx_list in grouped_hgvsc_canonical.items() %}
                                                 <div style="margin-left: 4px; margin-top: 2px;">
                                                     <span style="white-space: nowrap; font-weight: bold;">{{ tx_list }}</span><br>
                                                     <span style="margin-left: 8px; word-break: break-all;">{{ hgvs_part | replace('→', '<br>&nbsp;&nbsp;&nbsp;&nbsp;→') | safe }}</span>
@@ -698,22 +756,31 @@ class ReportGenerator:
                                             <br>
                                         {% endif %}
                                         
-                                        {# Discordant Other - grouped and limited to top 3 groups #}
-                                        {% if grouped_other %}
-                                            {% set other_groups = grouped_other.items() | list %}
-                                            {% set total_groups = other_groups | length %}
-                                            {% set show_groups = [3, total_groups] | min %}
-                                            <strong style="color: #c62828;">Discordant Other (showing {{ show_groups }} of {{ total_groups }} groups):</strong><br>
-                                            {% for hgvs_part, tx_list in other_groups[:3] %}
-                                                <div style="margin-left: 4px; margin-top: 2px;">
-                                                    <span style="white-space: nowrap; font-weight: bold;">{{ tx_list }}</span>
-                                                    {% if hgvs_part | length > 60 %}
-                                                        <span style="word-break: break-all;">({{ hgvs_part[1:60] }}...)</span>
-                                                    {% else %}
-                                                        <span style="word-break: break-all;">{{ hgvs_part }}</span>
-                                                    {% endif %}
-                                                </div>
-                                            {% endfor %}
+                                        {# Show other discordant if no canonical shown #}
+                                        {% if not grouped_hgvsp_canonical and not grouped_hgvsc_canonical %}
+                                            {% if hgvsp_discordant_other %}
+                                                <strong style="color: #c62828;">Discordant HGVSp (Other, top 3):</strong><br>
+                                                {% for item in hgvsp_discordant_other[:3] %}
+                                                    <div style="margin-left: 4px; margin-top: 2px;">
+                                                        {% if item | length > 60 %}
+                                                            <span style="word-break: break-all;">{{ item[:60] }}...</span>
+                                                        {% else %}
+                                                            <span style="word-break: break-all;">{{ item }}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                {% endfor %}
+                                            {% elif hgvsc_discordant_other %}
+                                                <strong style="color: #c62828;">Discordant HGVSc (Other, top 3):</strong><br>
+                                                {% for item in hgvsc_discordant_other[:3] %}
+                                                    <div style="margin-left: 4px; margin-top: 2px;">
+                                                        {% if item | length > 60 %}
+                                                            <span style="word-break: break-all;">{{ item[:60] }}...</span>
+                                                        {% else %}
+                                                            <span style="word-break: break-all;">{{ item }}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                {% endfor %}
+                                            {% endif %}
                                         {% endif %}
                                     </div>
                                 {% else %}

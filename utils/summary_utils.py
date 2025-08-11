@@ -385,22 +385,39 @@ class SummaryDataCalculator:
         if len(df_full) > 0:
             # CANONICAL HGVSc Match Rate
             if 'CANONICAL_HGVSc_Match' in df_full.columns:
-                canonical_match_yes = (df_full['CANONICAL_HGVSc_Match'] == 'YES').sum()
-                canonical_match_rate = round(canonical_match_yes / len(df_full) * 100, 1)
+                canonical_hgvsc_match_yes = (df_full['CANONICAL_HGVSc_Match'] == 'YES').sum()
+                canonical_hgvsc_match_rate = round(canonical_hgvsc_match_yes / len(df_full) * 100, 1)
             else:
-                canonical_match_yes = 0
-                canonical_match_rate = 0
+                canonical_hgvsc_match_yes = 0
+                canonical_hgvsc_match_rate = 0
+            
+            # CANONICAL HGVSp Match Rate
+            if 'CANONICAL_HGVSp_Match' in df_full.columns:
+                canonical_hgvsp_match_yes = (df_full['CANONICAL_HGVSp_Match'] == 'YES').sum()
+                canonical_hgvsp_match_rate = round(canonical_hgvsp_match_yes / len(df_full) * 100, 1)
+            else:
+                canonical_hgvsp_match_yes = 0
+                canonical_hgvsp_match_rate = 0
             
             # Matched transcripts statistics
             if 'HGVSc_MATCHED_transcripts' in df_full.columns:
-                matched_transcript_counts = df_full['HGVSc_MATCHED_transcripts'].fillna(0)
-                avg_matched_transcripts = round(matched_transcript_counts.mean(), 1)
-                total_matched_transcripts = matched_transcript_counts.sum()
+                hgvsc_matched_counts = df_full['HGVSc_MATCHED_transcripts'].fillna(0)
+                avg_hgvsc_matched = round(hgvsc_matched_counts.mean(), 1)
+                total_hgvsc_matched = hgvsc_matched_counts.sum()
             else:
-                avg_matched_transcripts = 0
-                total_matched_transcripts = 0
+                avg_hgvsc_matched = 0
+                total_hgvsc_matched = 0
+
+            # HGVSp matched transcripts  
+            if 'HGVSp_MATCHED_transcripts' in df_full.columns:
+                hgvsp_matched_counts = df_full['HGVSp_MATCHED_transcripts'].fillna(0)
+                avg_hgvsp_matched = round(hgvsp_matched_counts.mean(), 1)
+                total_hgvsp_matched = hgvsp_matched_counts.sum()
+            else:
+                avg_hgvsp_matched = 0
+                total_hgvsp_matched = 0
             
-            # Concordant HGVS Rate (among variants with matched transcripts)
+            # Concordant HGVSc Rate (among variants with matched transcripts)
             if 'matched_hgvsc_concordant' in df_full.columns and 'matched_hgvsc_discordant' in df_full.columns:
                 # Count concordant and discordant matches
                 def count_hgvsc_items(series):
@@ -412,35 +429,74 @@ class SummaryDataCalculator:
                         return 0
                     return len([item.strip() for item in items.split(',') if item.strip()])
                 
-                concordant_counts = df_full['matched_hgvsc_concordant'].apply(count_hgvsc_items)
-                discordant_counts = df_full['matched_hgvsc_discordant'].apply(count_hgvsc_items)
+                hgvsc_concordant_counts = df_full['matched_hgvsc_concordant'].apply(count_hgvsc_items)
+                hgvsc_discordant_counts = df_full['matched_hgvsc_discordant'].apply(count_hgvsc_items)
                 
-                total_concordant = concordant_counts.sum()
-                total_discordant = discordant_counts.sum()
-                total_matched_hgvsc = total_concordant + total_discordant
-                
-                concordant_hgvs_rate = round(total_concordant / total_matched_hgvsc * 100, 1) if total_matched_hgvsc > 0 else 0
+                total_hgvsc_concordant = hgvsc_concordant_counts.sum()
+                total_hgvsc_discordant = hgvsc_discordant_counts.sum()
+                total_hgvsc_compared = total_hgvsc_concordant + total_hgvsc_discordant
+
+                concordant_hgvsc_rate = round(total_hgvsc_concordant / total_hgvsc_compared * 100, 1) if total_hgvsc_compared > 0 else 0
             else:
-                total_concordant = 0
-                total_discordant = 0
-                total_matched_hgvsc = 0
-                concordant_hgvs_rate = 0
-            
+                total_hgvsc_concordant = 0
+                total_hgvsc_discordant = 0
+                total_hgvsc_compared = 0
+                concordant_hgvsc_rate = 0
+
+            # HGVSp concordance (NEW)
+            if 'HGVSp_MATCHED_concordant' in df_full.columns and 'HGVSp_MATCHED_discordant' in df_full.columns:
+                # Same logic as HGVSc but for HGVSp
+                def count_hgvsp_items(series):
+                    if pd.isna(series):
+                        return 0
+                    items = str(series).strip()
+                    if items == '' or items == '-':
+                        return 0
+                    return len([item.strip() for item in items.split(';') if item.strip()])
+                
+                hgvsp_concordant_counts = df_full['HGVSp_MATCHED_concordant'].apply(count_hgvsp_items)
+                hgvsp_discordant_counts = df_full['HGVSp_MATCHED_discordant'].apply(count_hgvsp_items)
+                
+                total_hgvsp_concordant = hgvsp_concordant_counts.sum()
+                total_hgvsp_discordant = hgvsp_discordant_counts.sum()
+                total_hgvsp_compared = total_hgvsp_concordant + total_hgvsp_discordant
+                
+                concordant_hgvsp_rate = round(total_hgvsp_concordant / total_hgvsp_compared * 100, 1) if total_hgvsp_compared > 0 else 0
+            else:
+                total_hgvsp_concordant = 0
+                total_hgvsp_discordant = 0
+                total_hgvsp_compared = 0
+                concordant_hgvsp_rate = 0
+
+
             hgvs_analysis = {
-                "canonical_match": {
-                    "variants_with_match": canonical_match_yes,
-                    "match_rate_percentage": canonical_match_rate,
+                "canonical_hgvsc_match": {
+                    "variants_with_match": canonical_hgvsc_match_yes,
+                    "match_rate_percentage": canonical_hgvsc_match_rate,
+                    "total_variants": len(df_full)
+                },
+                "canonical_hgvsp_match": {
+                    "variants_with_match": canonical_hgvsp_match_yes,
+                    "match_rate_percentage": canonical_hgvsp_match_rate,
                     "total_variants": len(df_full)
                 },
                 "matched_transcripts": {
-                    "average_per_variant": avg_matched_transcripts,
-                    "total_matched": int(total_matched_transcripts)
+                    "hgvsc_average_per_variant": avg_hgvsc_matched,
+                    "hgvsc_total_matched": int(total_hgvsc_matched),
+                    "hgvsp_average_per_variant": avg_hgvsp_matched,
+                    "hgvsp_total_matched": int(total_hgvsp_matched)
                 },
                 "hgvsc_concordance": {
-                    "total_concordant": int(total_concordant),
-                    "total_discordant": int(total_discordant),
-                    "total_compared": int(total_matched_hgvsc),
-                    "concordant_rate_percentage": concordant_hgvs_rate
+                    "total_concordant": int(total_hgvsc_concordant),         
+                    "total_discordant": int(total_hgvsc_discordant),        
+                    "total_compared": int(total_hgvsc_compared),             
+                    "concordant_rate_percentage": concordant_hgvsc_rate       
+                },
+                "hgvsp_concordance": {
+                    "total_concordant": int(total_hgvsp_concordant),
+                    "total_discordant": int(total_hgvsp_discordant),
+                    "total_compared": int(total_hgvsp_compared),
+                    "concordant_rate_percentage": concordant_hgvsp_rate
                 }
             }
 

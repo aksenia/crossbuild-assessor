@@ -220,8 +220,6 @@ def format_for_excel(df):
     # HGVSc Analysis Columns
     output_df['HGVSc_CANONICAL_hg19'] = df['hg19_canonical_hgvsc'].fillna('')
     output_df['HGVSc_CANONICAL_hg38'] = df['hg38_canonical_hgvsc'].fillna('')
-    output_df['HGVSc_rest_hg19'] = df['hg19_rest_hgvsc'].fillna('')
-    output_df['HGVSc_rest_hg38'] = df['hg38_rest_hgvsc'].fillna('')
     output_df['Tx_Count_hg19'] = df['hg19_transcript_count'].fillna(0)
     output_df['Tx_Count_hg38'] = df['hg38_transcript_count'].fillna(0)
 
@@ -230,9 +228,14 @@ def format_for_excel(df):
     output_df['HGVSc_MATCHED_concordant'] = df['matched_hgvsc_concordant'].fillna('')
     output_df['HGVSc_MATCHED_discordant'] = df['matched_hgvsc_discordant'].fillna('')
 
-    # HGVSp for reference (no analysis yet)
+    # HGVSp canonical columns 
     output_df['HGVSp_CANONICAL_hg19'] = df['hg19_canonical_hgvsp'].fillna('')
     output_df['HGVSp_CANONICAL_hg38'] = df['hg38_canonical_hgvsp'].fillna('')
+    # HGSVp analysis
+    output_df['CANONICAL_HGVSp_Match'] = df['CANONICAL_HGVSp_Match'].fillna('NO')
+    output_df['HGVSp_MATCHED_transcripts'] = df['HGVSp_MATCHED_transcripts'].fillna(0)
+    output_df['HGVSp_MATCHED_concordant'] = df['HGVSp_MATCHED_concordant'].fillna('')
+    output_df['HGVSp_MATCHED_discordant'] = df['HGVSp_MATCHED_discordant'].fillna('')
 
     # Canonical transcript info (build-specific)
     output_df['CANONICAL_transcript_hg19'] = df['hg19_canonical_transcript'].fillna('')
@@ -299,12 +302,6 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'impact_changes': 'Impact_Changes',
         'hg19_high_impact_consequences': 'High_Impact_Consequences_hg19',  
         'hg38_high_impact_consequences': 'High_Impact_Consequences_hg38',  
-        'hg19_sift': 'SIFT_hg19',
-        'hg38_sift': 'SIFT_hg38',
-        'hg19_polyphen': 'PolyPhen_hg19',
-        'hg38_polyphen': 'PolyPhen_hg38',
-        'sift_change': 'SIFT_Change',
-        'polyphen_change': 'PolyPhen_Change',
         'transcript_relationship': 'Transcript_Relationship',
         'hg19_transcript_count': 'Tx_Count_hg19',
         'hg38_transcript_count': 'Tx_Count_hg38',
@@ -316,17 +313,27 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg38_canonical_hgvsc': 'HGVSc_CANONICAL_hg38',
         'hg19_hgvsp_canonical': 'HGVSp_CANONICAL_hg19', 
         'hg38_hgvsp_canonical': 'HGVSp_CANONICAL_hg38',
-        'hg19_rest_hgvsc': 'HGVSc_rest_hg19',
-        'hg38_rest_hgvsc': 'HGVSc_rest_hg38',
-        # Matched transcript analysis
+        # NEW HGVSp columns
+        'CANONICAL_HGVSp_Match': 'CANONICAL_HGVSp_Match',
+        'HGVSp_MATCHED_transcripts': 'HGVSp_MATCHED_transcripts',
+        'HGVSp_MATCHED_concordant': 'HGVSp_MATCHED_concordant',
+        'HGVSp_MATCHED_discordant': 'HGVSp_MATCHED_discordant',
+        # Matched HGVSc analysis
         'matched_transcript_count': 'HGVSc_MATCHED_transcripts',
         'matched_hgvsc_concordant': 'HGVSc_MATCHED_concordant',
         'matched_hgvsc_discordant': 'HGVSc_MATCHED_discordant',
+        # Matched transcript analysis
         'consequence_relationship': 'Consequence_Relationship',
         'consequence_change': 'Consequence_Change',
         'problematic_transcripts_hg19': 'Problematic_Transcripts_hg19',
         'problematic_transcripts_hg38': 'Problematic_Transcripts_hg38',
         'same_transcript_consequence_changes': 'Transcript_Changes',
+        'hg19_sift': 'SIFT_hg19',
+        'hg38_sift': 'SIFT_hg38',
+        'hg19_polyphen': 'PolyPhen_hg19',
+        'hg38_polyphen': 'PolyPhen_hg38',
+        'sift_change': 'SIFT_Change',
+        'polyphen_change': 'PolyPhen_Change',
         'pos_match': 'Position_Match',
         'gt_match': 'Genotype_Match',
         'mapping_status': 'Mapping_Status',

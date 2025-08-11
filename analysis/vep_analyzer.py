@@ -16,7 +16,7 @@ from utils.clinical_utils import (
     normalize_clinical_significance
 )
 from config.constants import VEP_CONSEQUENCE_IMPACT
-from utils.hgvs_utils import analyze_transcript_hgvsc_matches
+from utils.hgvs_utils import analyze_transcript_hgvsc_matches, analyze_transcript_hgvsp_matches
 
 class VEPAnalyzer:
     """Analyzes VEP annotations to identify discordances between genome builds"""
@@ -467,6 +467,9 @@ class VEPAnalyzer:
 
         # HGVSc analysis
         hgvsc_analysis = self._analyze_hgvsc_concordance(hg19_transcripts_df, hg38_transcripts_df)
+        # HGVSp analysis 
+        hgvsp_analysis = self._analyze_hgvsp_concordance(hg19_transcripts_df, hg38_transcripts_df)
+
 
         # Add HGVSc results to the return dictionary
         vep_analysis.update({
@@ -483,6 +486,10 @@ class VEPAnalyzer:
             'hg38_hgvsc_canonical': hgvsc_analysis['hg38_canonical_hgvsc'],
             'hg19_hgvsp_canonical': hgvsc_analysis['hg19_canonical_hgvsp'],
             'hg38_hgvsp_canonical': hgvsc_analysis['hg38_canonical_hgvsp'],
+            # HGVSp values
+            'matched_hgvsp_concordant': hgvsp_analysis['matched_hgvsp_concordant'],
+            'matched_hgvsp_discordant': hgvsp_analysis['matched_hgvsp_discordant'],
+            'hgvsp_matched_transcript_count': hgvsp_analysis['matched_transcript_count'],
 
             'hg19_rest_hgvsc': hgvsc_analysis['hg19_rest_hgvsc'],
             'hg38_rest_hgvsc': hgvsc_analysis['hg38_rest_hgvsc'],
@@ -533,3 +540,40 @@ class VEPAnalyzer:
         hgvsc_results = analyze_transcript_hgvsc_matches(hg19_tx_data, hg38_tx_data)
         
         return hgvsc_results
+    
+    def _analyze_hgvsp_concordance(self, hg19_transcripts_df, hg38_transcripts_df):
+        """Analyze HGVSp concordance with canonical transcript priority"""
+        
+        # Extract transcript data with HGVSp (same logic as HGVSc but for protein)
+        hg19_tx_data = {}
+        hg38_tx_data = {}
+        
+        # Build hg19 transcript dictionary with HGVSp
+        for _, row in hg19_transcripts_df.iterrows():
+            base_id = normalize_transcript_id(row['feature'])
+            if base_id:
+                hg19_tx_data[base_id] = {
+                    'hgvsp': row.get('hgvsp', ''),
+                    'consequence': row.get('consequence', ''),
+                    'impact': row.get('impact', ''),
+                    'is_canonical': row.get('is_canonical', 0),
+                    'feature_id': row.get('feature', '')
+                }
+        
+        # Build hg38 transcript dictionary with HGVSp
+        for _, row in hg38_transcripts_df.iterrows():
+            base_id = normalize_transcript_id(row['feature'])
+            if base_id:
+                hg38_tx_data[base_id] = {
+                    'hgvsp': row.get('hgvsp', ''),
+                    'consequence': row.get('consequence', ''),
+                    'impact': row.get('impact', ''),
+                    'is_canonical': row.get('is_canonical', 0),
+                    'feature_id': row.get('feature', '')
+                }
+        
+        # Analyze HGVSp matches using the new function
+        from utils.hgvs_utils import analyze_transcript_hgvsp_matches
+        hgvsp_results = analyze_transcript_hgvsp_matches(hg19_tx_data, hg38_tx_data)
+        
+        return hgvsp_results

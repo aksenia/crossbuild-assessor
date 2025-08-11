@@ -123,14 +123,32 @@ class PrioritizationPlotter:
 
 
     def _plot_canonical_hgvsc_match(self, df, ax):
-        """Plot 2: CANONICAL HGVSc Match vs Clinical Changes (NEW)"""
-        print("2. Creating CANONICAL HGVSc Match vs Clinical Changes...")
+        """Plot 2: CANONICAL HGVS Match (HGVSc + HGVSp combinations) vs Clinical Changes"""
+        print("2. Creating CANONICAL HGVS Match vs Clinical Changes...")
         
         if len(df) > 0 and 'CANONICAL_HGVSc_Match' in df.columns and 'Clinical_Change_Direction' in df.columns:
+            # Create 4-category HGVS combination classification
+            def categorize_hgvs_match(row):
+                hgvsc_match = row.get('CANONICAL_HGVSc_Match', 'NO')
+                hgvsp_match = row.get('CANONICAL_HGVSp_Match', 'NO')
+                
+                if hgvsc_match == 'YES' and hgvsp_match == 'YES':
+                    return 'HGVSc Match + HGVSp Match'
+                elif hgvsc_match == 'YES' and hgvsp_match == 'NO':
+                    return 'HGVSc Match + HGVSp Mismatch'
+                elif hgvsc_match == 'NO' and hgvsp_match == 'YES':
+                    return 'HGVSc Mismatch + HGVSp Match'
+                else:  # Both NO
+                    return 'HGVSc Mismatch + HGVSp Mismatch'
+            
+            # Apply categorization
+            df_plot = df.copy()
+            df_plot['HGVS_Category'] = df_plot.apply(categorize_hgvs_match, axis=1)
+            
             # Create contingency table
             match_clinical_crosstab = pd.crosstab(
-                df['CANONICAL_HGVSc_Match'], 
-                df['Clinical_Change_Direction']
+                df_plot['HGVS_Category'], 
+                df_plot['Clinical_Change_Direction']
             )
 
             # Group all stable categories together
@@ -151,6 +169,15 @@ class PrioritizationPlotter:
             # Reorder columns to match category order
             ordered_columns = [cat for cat in category_order if cat in match_clinical_crosstab.columns]
             match_clinical_crosstab = match_clinical_crosstab.reindex(columns=ordered_columns, fill_value=0)
+            
+            # Define x-axis order for HGVS combination categories
+            hgvs_category_order = [
+                'HGVSc Match + HGVSp Match',
+                'HGVSc Match + HGVSp Mismatch', 
+                'HGVSc Mismatch + HGVSp Match',
+                'HGVSc Mismatch + HGVSp Mismatch'
+            ]
+            match_clinical_crosstab = match_clinical_crosstab.reindex(index=hgvs_category_order, fill_value=0)
             
             if len(ordered_columns) > 0:
                 # Color coding using visualization config
@@ -183,28 +210,24 @@ class PrioritizationPlotter:
                     width=0.7
                 )
                 
-                ax.set_xlabel('CANONICAL HGVSc Match', fontweight='bold')
+                ax.set_xlabel('Canonical Transcript HGVS Analysis', fontweight='bold')
                 ax.set_ylabel('Variant Count', fontweight='bold')
-                ax.set_title('CANONICAL HGVSc Match vs Clinical Changes', 
+                ax.set_title('Canonical Transcript HGVS Analysis vs Clinical Changes', 
                             fontsize=12, fontweight='bold')
-                ax.set_xticklabels(['NO', 'YES'], rotation=0)
+                ax.set_xticklabels(['Both Match', 'HGVSc Match\nHGVSp Mismatch', 'HGVSc Mismatch\nHGVSp Match', 'Both Mismatch'], 
+                                rotation=45, ha='right')
                 ax.legend(title='Clinical Change Direction', bbox_to_anchor=(1.05, 1), loc='upper left')
                 ax.grid(True, alpha=0.3, axis='y')
                 
-                # Add count labels on bars
-                # Add percentage labels on bars
+                # Add percentage labels on bars (same logic as original)
                 for container in ax.containers:
-                    # Calculate percentages for each bar segment
                     labels = []
-                    for bar in container:
+                    for i, bar in enumerate(container):
                         height = bar.get_height()
                         if height > 0:
-                            # Get the total for this x-category (YES or NO)
-                            x_pos = bar.get_x() + bar.get_width()/2
-                            if x_pos < 0.5:  # NO category
-                                total = match_clinical_crosstab.loc['NO'].sum()
-                            else:  # YES category  
-                                total = match_clinical_crosstab.loc['YES'].sum()
+                            # Get the total for this x-category
+                            category_name = hgvs_category_order[i] if i < len(hgvs_category_order) else 'Unknown'
+                            total = match_clinical_crosstab.loc[category_name].sum() if category_name in match_clinical_crosstab.index else 1
                             
                             percentage = height / total * 100 if total > 0 else 0
                             if percentage >= 5:  # Only show percentages >= 5% to avoid clutter
@@ -219,14 +242,14 @@ class PrioritizationPlotter:
             else:
                 ax.text(0.5, 0.5, 'No clinical change\ndata available', ha='center', va='center',
                         fontsize=12, transform=ax.transAxes)
-                ax.set_title('CANONICAL HGVSc Match vs Clinical Changes', 
+                ax.set_title('Canonical Transcript HGVS Analysis vs Clinical Changes', 
                             fontsize=12, fontweight='bold')
         else:
             ax.text(0.5, 0.5, 'Required columns not\navailable in data', ha='center', va='center',
                     fontsize=12, transform=ax.transAxes)
-            ax.set_title('CANONICAL HGVSc Match vs Clinical Changes', 
+            ax.set_title('Canonical Transcript HGVS Analysis vs Clinical Changes', 
                         fontsize=12, fontweight='bold')
-    
+        
     def _plot_impact_transitions_grouped(self, df, ax):
         """Plot 2: Impact transitions with grouping (REDESIGNED)"""
         print("2. Creating impact transitions with grouping...")

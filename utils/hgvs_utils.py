@@ -305,3 +305,99 @@ def analyze_transcript_hgvsc_matches(hg19_tx_data, hg38_tx_data):
         'hg19_canonical_hgvsp': hg19_canonical_hgvsp,
         'hg38_canonical_hgvsp': hg38_canonical_hgvsp
     }
+
+def compare_hgvsp_strings(hgvsp1, hgvsp2):
+    """
+    Compare two HGVSp strings using hgvs library normalization
+    
+    Returns:
+        tuple: (match_result, details)
+        match_result: 'concordant', 'discordant', 'parse_error', 'missing_data'
+        details: str with comparison details
+    """
+    if pd.isna(hgvsp1) or pd.isna(hgvsp2):
+        return 'missing_data', 'missing values'
+    
+    if hgvsp1 == '' or hgvsp2 == '' or hgvsp1 == '-' or hgvsp2 == '-':
+        return 'missing_data', 'empty values'
+    
+    # Normalize both strings
+    norm1, success1, error1 = normalize_hgvs_string(hgvsp1)
+    norm2, success2, error2 = normalize_hgvs_string(hgvsp2)
+    
+    # If either failed to parse, fall back to string comparison
+    if not success1 or not success2:
+        simple_match = str(hgvsp1).strip() == str(hgvsp2).strip()
+        if simple_match:
+            return 'concordant', 'string match'
+        else:
+            return 'parse_error', 'parse failed'
+    
+    # Compare normalized strings
+    if norm1 == norm2:
+        return 'concordant', norm1
+    else:
+        return 'discordant', f'{norm1} vs {norm2}'
+
+
+def compare_canonical_hgvsp(hg19_hgvsp, hg38_hgvsp):
+    """Compare canonical HGVSp returning boolean match"""
+    match_result, _ = compare_hgvsp_strings(hg19_hgvsp, hg38_hgvsp)
+    return match_result == 'concordant'
+
+def analyze_transcript_hgvsp_matches(hg19_tx_data, hg38_tx_data):
+    """
+    Compare HGVSp for matched transcript pairs - protein-level analysis only
+    
+    Returns: dict with HGVSp-specific analysis results
+    """
+    perfect_matches = []
+    mismatches = []
+    parse_errors = []
+    
+    # Find matched transcript pairs (same base ID)
+    common_transcripts = set(hg19_tx_data.keys()) & set(hg38_tx_data.keys())
+    
+    for tx_id in common_transcripts:
+        hg19_data = hg19_tx_data[tx_id]
+        hg38_data = hg38_tx_data[tx_id]
+        
+        hg19_hgvsp = hg19_data.get('hgvsp', '')
+        hg38_hgvsp = hg38_data.get('hgvsp', '')
+        
+        # Skip if either transcript lacks HGVSp
+        if not hg19_hgvsp or not hg38_hgvsp or hg19_hgvsp in ['', '-'] or hg38_hgvsp in ['', '-']:
+            continue
+        
+        match_result, details = compare_hgvsp_strings(hg19_hgvsp, hg38_hgvsp)
+        
+        if match_result == 'concordant':
+            perfect_matches.append((tx_id, hg19_hgvsp, hg38_hgvsp, details))
+        elif match_result == 'discordant':
+            mismatches.append((tx_id, hg19_hgvsp, hg38_hgvsp, details))
+        else:  # parse_error or missing_data
+            parse_errors.append((tx_id, hg19_hgvsp, hg38_hgvsp, details))
+    
+    # Create concordant/discordant lists for HGVSp
+    matched_concordant_list = []
+    matched_discordant_list = []
+    
+    for tx_id, hg19_hgvsp, hg38_hgvsp, details in perfect_matches:
+        # Extract just the HGVSp part (remove protein prefix if present)
+        hgvsp_clean = hg19_hgvsp.split(':')[-1] if ':' in hg19_hgvsp else hg19_hgvsp
+        matched_concordant_list.append(f"{tx_id}({hgvsp_clean})")
+    
+    for tx_id, hg19_hgvsp, hg38_hgvsp, details in mismatches:
+        # Extract clean HGVSp parts
+        hg19_clean = hg19_hgvsp.split(':')[-1] if ':' in hg19_hgvsp else hg19_hgvsp
+        hg38_clean = hg38_hgvsp.split(':')[-1] if ':' in hg38_hgvsp else hg38_hgvsp
+        matched_discordant_list.append(f"{tx_id}({hg19_clean}→{hg38_clean})")
+    
+    return {
+        'matched_transcript_count': len(perfect_matches) + len(mismatches),
+        'matched_hgvsp_concordant': '; '.join(matched_concordant_list) if matched_concordant_list else '',
+        'matched_hgvsp_discordant': '; '.join(matched_discordant_list) if matched_discordant_list else '',
+        'perfect_matches': perfect_matches,
+        'mismatches': mismatches,
+        'parse_errors': parse_errors
+    }
