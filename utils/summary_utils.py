@@ -392,8 +392,8 @@ class SummaryDataCalculator:
                 canonical_match_rate = 0
             
             # Matched transcripts statistics
-            if 'matched_transcript_count' in df_full.columns:
-                matched_transcript_counts = df_full['matched_transcript_count'].fillna(0)
+            if 'HGVSc_MATCHED_transcripts' in df_full.columns:
+                matched_transcript_counts = df_full['HGVSc_MATCHED_transcripts'].fillna(0)
                 avg_matched_transcripts = round(matched_transcript_counts.mean(), 1)
                 total_matched_transcripts = matched_transcript_counts.sum()
             else:

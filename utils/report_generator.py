@@ -441,15 +441,15 @@ class ReportGenerator:
                 </div>
                 <div class="metric-card">
                     <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsc_concordance', 'concordant_rate_percentage']) }}%</div>
-                    <div class="metric-label">Concordant HGVS Rate</div>
+                    <div class="metric-label">Concordant HGVSc Rate</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'matched_transcripts', 'average_per_variant']) }}</div>
-                    <div class="metric-label">Avg Matched Transcripts</div>
+                    <div class="metric-label">Avg HGVSc-Matched Transcripts</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsc_concordance', 'total_compared']) }}</div>
-                    <div class="metric-label">Total HGVS Comparisons</div>
+                    <div class="metric-label">Total HGVSc Comparisons</div>
                 </div>
             </div>
 
@@ -541,7 +541,7 @@ class ReportGenerator:
         {% if top_variants %}
         <div class="section">
             <h2>Top priority variants</h2>
-            <p><em>Showing the highest priority variants ordered by priority score (most critical first)</em></p>
+            <p><em>Showing example variants with discrepancies</em></p>
             <div class="table-container">
                 <table>
                     <thead>
@@ -549,7 +549,7 @@ class ReportGenerator:
                             <th>Priority</th>
                             <th>Location</th>
                             <th>Gene (hg19/hg38)</th>
-                             <th>HGVS Matches</th>
+                            <th>HGVSc Matches</th>
                             <th>Clinical significance</th>
                             <th>Impact level</th>
                             <th>Consequence Relationship</th>
@@ -586,8 +586,8 @@ class ReportGenerator:
                                     <span class="clinical-change">{{ gene_hg19 }} → {{ gene_hg38 }}</span>
                                 {% endif %}
                             </td>
-                            <!-- HGVS Matches with proper transcript protection -->
-                            <td style="font-size: 10px; max-width: 250px; vertical-align: top; line-height: 1.3;">
+                            <!-- HGVS Matches with summary + discordant details + HGVS grouping -->
+                            <td style="font-size: 10px; max-width: 250px; vertical-align: top; line-height: 1.2;">
                                 {% set concordant_raw = variant.get('HGVSc_MATCHED_concordant', '') %}
                                 {% set discordant_raw = variant.get('HGVSc_MATCHED_discordant', '') %}
                                 
@@ -599,28 +599,128 @@ class ReportGenerator:
                                 {% set concordant = '' if concordant in ['', '-', 'nan'] else concordant %}
                                 {% set discordant = '' if discordant in ['', '-', 'nan'] else discordant %}
                                 
-                                {% if concordant or discordant %}
-                                    <div class="{% if discordant %}clinical-change{% else %}clinical-stable{% endif %}">
-                                        {# Show concordant matches - simple format #}
-                                        {% if concordant %}
-                                            <div style="color: #2e7d32; margin-bottom: 6px;">
-                                                <strong>✓ Concordant:</strong><br>
-                                                <div style="margin-left: 4px; white-space: pre-wrap; word-break: break-word;">{{ concordant | replace('); ', ');\n') | replace('→', '\n    →') | safe }}</div>
-                                            </div>
+                                {# Parse concordant and discordant lists #}
+                                {% set concordant_items = [] %}
+                                {% set discordant_items = [] %}
+                                
+                                {# Split on both commas and semicolons, then clean up #}
+                                {% if concordant %}
+                                    {% for item in concordant.replace(';', ',').split(',') %}
+                                        {% set clean_item = item.strip() %}
+                                        {% if clean_item and clean_item != '' %}
+                                            {% set _ = concordant_items.append(clean_item) %}
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endif %}
+                                
+                                {% if discordant %}
+                                    {% for item in discordant.replace(';', ',').split(',') %}
+                                        {% set clean_item = item.strip() %}
+                                        {% if clean_item and clean_item != '' %}
+                                            {% set _ = discordant_items.append(clean_item) %}
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endif %}
+                                
+                                {# Count canonical vs other #}
+                                {% set concordant_canonical_count = 0 %}
+                                {% set discordant_canonical_list = [] %}
+                                {% set discordant_other_list = [] %}
+                                
+                                {# Count concordant canonical #}
+                                {% for item in concordant_items %}
+                                    {% if 'NM_' in item %}
+                                        {% set concordant_canonical_count = concordant_canonical_count + 1 %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {# Separate discordant canonical vs other #}
+                                {% for item in discordant_items %}
+                                    {% if 'NM_' in item %}
+                                        {% set _ = discordant_canonical_list.append(item) %}
+                                    {% else %}
+                                        {% set _ = discordant_other_list.append(item) %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {# Group discordant canonical by identical HGVS #}
+                                {% set grouped_canonical = {} %}
+                                {% for item in discordant_canonical_list %}
+                                    {% if '(' in item %}
+                                        {% set tx_id = item.split('(')[0].strip() %}
+                                        {% set hgvs_part = '(' + item.split('(')[1] %}
+                                        {% if hgvs_part in grouped_canonical %}
+                                            {% set current_txs = grouped_canonical[hgvs_part] %}
+                                            {% set _ = grouped_canonical.update({hgvs_part: current_txs + ', ' + tx_id}) %}
+                                        {% else %}
+                                            {% set _ = grouped_canonical.update({hgvs_part: tx_id}) %}
+                                        {% endif %}
+                                    {% else %}
+                                        {# No parentheses - treat as unique #}
+                                        {% set _ = grouped_canonical.update({item: item}) %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {# Group discordant other by identical HGVS #}
+                                {% set grouped_other = {} %}
+                                {% for item in discordant_other_list %}
+                                    {% if '(' in item %}
+                                        {% set tx_id = item.split('(')[0].strip() %}
+                                        {% set hgvs_part = '(' + item.split('(')[1] %}
+                                        {% if hgvs_part in grouped_other %}
+                                            {% set current_txs = grouped_other[hgvs_part] %}
+                                            {% set _ = grouped_other.update({hgvs_part: current_txs + ', ' + tx_id}) %}
+                                        {% else %}
+                                            {% set _ = grouped_other.update({hgvs_part: tx_id}) %}
+                                        {% endif %}
+                                    {% else %}
+                                        {# No parentheses - treat as unique #}
+                                        {% set _ = grouped_other.update({item: item}) %}
+                                    {% endif %}
+                                {% endfor %}
+                                
+                                {% set concordant_other_count = (concordant_items | length) - concordant_canonical_count %}
+                                
+                                {% if concordant_items or discordant_items %}
+                                    <div class="{% if discordant_items %}clinical-change{% else %}clinical-stable{% endif %}">
+                                        {# Summary line #}
+                                        <strong>Summary:</strong> {{ concordant_items | length }} concordant ({{ concordant_canonical_count }} canonical), {{ discordant_items | length }} discordant ({{ discordant_canonical_list | length }} canonical)<br><br>
+                                        
+                                        {# Discordant Canonical - grouped by HGVS #}
+                                        {% if grouped_canonical %}
+                                            <strong style="color: #c62828;">Discordant Canonical:</strong><br>
+                                            {% for hgvs_part, tx_list in grouped_canonical.items() %}
+                                                <div style="margin-left: 4px; margin-top: 2px;">
+                                                    <span style="white-space: nowrap; font-weight: bold;">{{ tx_list }}</span><br>
+                                                    <span style="margin-left: 8px; word-break: break-all;">{{ hgvs_part | replace('→', '<br>&nbsp;&nbsp;&nbsp;&nbsp;→') | safe }}</span>
+                                                </div>
+                                            {% endfor %}
+                                            <br>
                                         {% endif %}
                                         
-                                        {# Show discordant matches - simple format #}
-                                        {% if discordant %}
-                                            <div style="color: #c62828;">
-                                                <strong>✗ Discordant:</strong><br>
-                                                <div style="margin-left: 4px; white-space: pre-wrap; word-break: break-word;">{{ discordant | replace('); ', ');\n') | replace('→', '\n    →') | safe }}</div>
-                                            </div>
+                                        {# Discordant Other - grouped and limited to top 3 groups #}
+                                        {% if grouped_other %}
+                                            {% set other_groups = grouped_other.items() | list %}
+                                            {% set total_groups = other_groups | length %}
+                                            {% set show_groups = [3, total_groups] | min %}
+                                            <strong style="color: #c62828;">Discordant Other (showing {{ show_groups }} of {{ total_groups }} groups):</strong><br>
+                                            {% for hgvs_part, tx_list in other_groups[:3] %}
+                                                <div style="margin-left: 4px; margin-top: 2px;">
+                                                    <span style="white-space: nowrap; font-weight: bold;">{{ tx_list }}</span>
+                                                    {% if hgvs_part | length > 60 %}
+                                                        <span style="word-break: break-all;">({{ hgvs_part[1:60] }}...)</span>
+                                                    {% else %}
+                                                        <span style="word-break: break-all;">{{ hgvs_part }}</span>
+                                                    {% endif %}
+                                                </div>
+                                            {% endfor %}
                                         {% endif %}
                                     </div>
                                 {% else %}
                                     N/A
                                 {% endif %}
                             </td>
+                            <!-- Clinical significance column -->
                             <td>
                                 {% set hg19_clin = variant.get('Clinical_Significance_hg19', 'N/A') %}
                                 {% set hg38_clin = variant.get('Clinical_Significance_hg38', 'N/A') %}
@@ -630,6 +730,7 @@ class ReportGenerator:
                                     <span class="clinical-stable">{{ hg19_clin }}</span>
                                 {% endif %}
                             </td>
+                            <!-- Impact level column -->
                             <td>
                                 {% set hg19_impact = variant.get('Impact_hg19', 'N/A') %}
                                 {% set hg38_impact = variant.get('Impact_hg38', 'N/A') %}

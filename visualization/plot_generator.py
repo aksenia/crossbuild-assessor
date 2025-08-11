@@ -92,7 +92,7 @@ class PrioritizationPlotter:
                 
                 ax.set_xlabel('Clinical Significance Category', fontweight='bold')
                 ax.set_ylabel('Variant Count', fontweight='bold')
-                ax.set_title('Clinical Evidence Distribution by Build', fontsize=12, fontweight='bold')
+                ax.set_title('Clinical Significance Distribution by Build', fontsize=12, fontweight='bold')
                 ax.set_xticks(x_positions)
                 ax.set_xticklabels(present_categories, rotation=45, ha='right', fontsize=9)
                 ax.legend()
@@ -115,11 +115,11 @@ class PrioritizationPlotter:
             else:
                 ax.text(0.5, 0.5, 'No clinical significance\ndata available', ha='center', va='center',
                           fontsize=12, transform=ax.transAxes)
-                ax.set_title('Clinical Evidence Distribution by Build', fontsize=12, fontweight='bold')
+                ax.set_title('Clinical Significance Distribution by Build', fontsize=12, fontweight='bold')
         else:
             ax.text(0.5, 0.5, 'No clinical significance\ndata available', ha='center', va='center',
                       fontsize=12, transform=ax.transAxes)
-            ax.set_title('Clinical Evidence Distribution by Build', fontsize=12, fontweight='bold')
+            ax.set_title('Clinical Significance Distribution by Build', fontsize=12, fontweight='bold')
 
 
     def _plot_canonical_hgvsc_match(self, df, ax):
@@ -132,17 +132,22 @@ class PrioritizationPlotter:
                 df['CANONICAL_HGVSc_Match'], 
                 df['Clinical_Change_Direction']
             )
-            
-            # Order clinical change categories (same as Plot 3)
-            stable_categories = [col for col in match_clinical_crosstab.columns if col.startswith('Stable')]
-            stable_categories.sort()
-            
-            category_order = stable_categories + [
+
+            # Group all stable categories together
+            stable_columns = [col for col in match_clinical_crosstab.columns if col.startswith('Stable')]
+            if stable_columns:
+                # Sum all stable categories into one 'Stable' column
+                match_clinical_crosstab['Stable'] = match_clinical_crosstab[stable_columns].sum(axis=1)
+                # Drop individual stable columns
+                match_clinical_crosstab = match_clinical_crosstab.drop(columns=stable_columns)
+
+            # Order categories: Stable first, then transitions
+            category_order = ['Stable'] + [
                 '→ PATHOGENIC', 'FROM PATHOGENIC →',
                 '→ BENIGN', 'FROM BENIGN →',
                 'Other Transitions'
             ]
-            
+
             # Reorder columns to match category order
             ordered_columns = [cat for cat in category_order if cat in match_clinical_crosstab.columns]
             match_clinical_crosstab = match_clinical_crosstab.reindex(columns=ordered_columns, fill_value=0)
@@ -180,24 +185,46 @@ class PrioritizationPlotter:
                 
                 ax.set_xlabel('CANONICAL HGVSc Match', fontweight='bold')
                 ax.set_ylabel('Variant Count', fontweight='bold')
-                ax.set_title('CANONICAL HGVSc Match vs Clinical Changes\n(Stacked by Clinical Direction)', 
+                ax.set_title('CANONICAL HGVSc Match vs Clinical Changes', 
                             fontsize=12, fontweight='bold')
                 ax.set_xticklabels(['NO', 'YES'], rotation=0)
                 ax.legend(title='Clinical Change Direction', bbox_to_anchor=(1.05, 1), loc='upper left')
                 ax.grid(True, alpha=0.3, axis='y')
                 
                 # Add count labels on bars
+                # Add percentage labels on bars
                 for container in ax.containers:
-                    ax.bar_label(container, fmt='%d', label_type='center', fontweight='bold', color='white')
+                    # Calculate percentages for each bar segment
+                    labels = []
+                    for bar in container:
+                        height = bar.get_height()
+                        if height > 0:
+                            # Get the total for this x-category (YES or NO)
+                            x_pos = bar.get_x() + bar.get_width()/2
+                            if x_pos < 0.5:  # NO category
+                                total = match_clinical_crosstab.loc['NO'].sum()
+                            else:  # YES category  
+                                total = match_clinical_crosstab.loc['YES'].sum()
+                            
+                            percentage = height / total * 100 if total > 0 else 0
+                            if percentage >= 5:  # Only show percentages >= 5% to avoid clutter
+                                labels.append(f'{percentage:.0f}%')
+                            else:
+                                labels.append('')
+                        else:
+                            labels.append('')
+                    
+                    ax.bar_label(container, labels, label_type='center', fontweight='bold', 
+                                color='white', fontsize=8)
             else:
                 ax.text(0.5, 0.5, 'No clinical change\ndata available', ha='center', va='center',
                         fontsize=12, transform=ax.transAxes)
-                ax.set_title('CANONICAL HGVSc Match vs Clinical Changes\n(Stacked by Clinical Direction)', 
+                ax.set_title('CANONICAL HGVSc Match vs Clinical Changes', 
                             fontsize=12, fontweight='bold')
         else:
             ax.text(0.5, 0.5, 'Required columns not\navailable in data', ha='center', va='center',
                     fontsize=12, transform=ax.transAxes)
-            ax.set_title('CANONICAL HGVSc Match vs Clinical Changes\n(Stacked by Clinical Direction)', 
+            ax.set_title('CANONICAL HGVSc Match vs Clinical Changes', 
                         fontsize=12, fontweight='bold')
     
     def _plot_impact_transitions_grouped(self, df, ax):
@@ -345,7 +372,7 @@ class PrioritizationPlotter:
                 
                 ax.set_xlabel('Clinical Significance Transition', fontweight='bold')
                 ax.set_ylabel('Variant Count', fontweight='bold')
-                ax.set_title('Clinical Significance Transitions (hg19→hg38)\nGrouped by Clinical Priority', fontsize=12, fontweight='bold')
+                ax.set_title('Clinical Significance Transitions (hg19→hg38)', fontsize=12, fontweight='bold')
                 ax.set_xticks(range(len(transition_counts)))
                 ax.set_xticklabels(transition_counts.index, rotation=45, ha='right', fontsize=8)
                 ax.grid(True, alpha=0.3, axis='y')
@@ -359,14 +386,14 @@ class PrioritizationPlotter:
             else:
                 ax.text(0.5, 0.5, 'No clinical significance\ntransitions found', ha='center', va='center',
                           fontsize=12, transform=ax.transAxes)
-                ax.set_title('Clinical Significance Transitions (hg19→hg38)\nGrouped by Clinical Priority', fontsize=12, fontweight='bold')
+                ax.set_title('Clinical Significance Transitions (hg19→hg38)', fontsize=12, fontweight='bold')
         else:
             ax.text(0.5, 0.5, 'No clinical significance\ndata available', ha='center', va='center',
                       fontsize=12, transform=ax.transAxes)
-            ax.set_title('Clinical Significance Transitions (hg19→hg38)\nGrouped by Clinical Priority', fontsize=12, fontweight='bold')
+            ax.set_title('Clinical Significance Transitions (hg19→hg38)', fontsize=12, fontweight='bold')
     
     def _plot_discordance_types(self, df, ax):
-        """Plot 4: Primary discordance types (MOVED, UNCHANGED LOGIC)"""
+        """Plot 4: Primary discordance types"""
         print("4. Creating primary discordance types visualization...")
         
         if len(df) > 0:
