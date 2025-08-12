@@ -437,13 +437,27 @@ class SummaryDataCalculator:
                 total_hgvsc_compared = total_hgvsc_concordant + total_hgvsc_discordant
 
                 concordant_hgvsc_rate = round(total_hgvsc_concordant / total_hgvsc_compared * 100, 1) if total_hgvsc_compared > 0 else 0
+
+                # Canonical HGVSc counts
+                canonical_hgvsc_concordant_total = 0
+                canonical_hgvsc_discordant_total = 0
+                
+                if 'canonical_hgvsc_concordant' in df_full.columns:
+                    canonical_concordant_counts = df_full['canonical_hgvsc_concordant'].apply(count_hgvsc_items)
+                    canonical_hgvsc_concordant_total = canonical_concordant_counts.sum()
+                
+                if 'canonical_hgvsc_discordant' in df_full.columns:
+                    canonical_discordant_counts = df_full['canonical_hgvsc_discordant'].apply(count_hgvsc_items)
+                    canonical_hgvsc_discordant_total = canonical_discordant_counts.sum()
             else:
                 total_hgvsc_concordant = 0
                 total_hgvsc_discordant = 0
                 total_hgvsc_compared = 0
                 concordant_hgvsc_rate = 0
+                canonical_hgvsc_concordant_total = 0
+                canonical_hgvsc_discordant_total = 0
 
-            # HGVSp concordance (NEW)
+            # HGVSp concordance 
             if 'HGVSp_MATCHED_concordant' in df_full.columns and 'HGVSp_MATCHED_discordant' in df_full.columns:
                 # Same logic as HGVSc but for HGVSp
                 def count_hgvsp_items(series):
@@ -462,11 +476,25 @@ class SummaryDataCalculator:
                 total_hgvsp_compared = total_hgvsp_concordant + total_hgvsp_discordant
                 
                 concordant_hgvsp_rate = round(total_hgvsp_concordant / total_hgvsp_compared * 100, 1) if total_hgvsp_compared > 0 else 0
+
+                # Canonical HGVSp counts
+                canonical_hgvsp_concordant_total = 0
+                canonical_hgvsp_discordant_total = 0
+                
+                if 'canonical_hgvsp_concordant' in df_full.columns:
+                    canonical_concordant_counts = df_full['canonical_hgvsp_concordant'].apply(count_hgvsp_items)
+                    canonical_hgvsp_concordant_total = canonical_concordant_counts.sum()
+                
+                if 'canonical_hgvsp_discordant' in df_full.columns:
+                    canonical_discordant_counts = df_full['canonical_hgvsp_discordant'].apply(count_hgvsp_items)
+                    canonical_hgvsp_discordant_total = canonical_discordant_counts.sum()
             else:
                 total_hgvsp_concordant = 0
                 total_hgvsp_discordant = 0
                 total_hgvsp_compared = 0
                 concordant_hgvsp_rate = 0
+                canonical_hgvsp_concordant_total = 0
+                canonical_hgvsp_discordant_total = 0
 
 
             hgvs_analysis = {
@@ -490,13 +518,17 @@ class SummaryDataCalculator:
                     "total_concordant": int(total_hgvsc_concordant),         
                     "total_discordant": int(total_hgvsc_discordant),        
                     "total_compared": int(total_hgvsc_compared),             
-                    "concordant_rate_percentage": concordant_hgvsc_rate       
+                    "concordant_rate_percentage": concordant_hgvsc_rate,
+                    "canonical_concordant": int(canonical_hgvsc_concordant_total),
+                    "canonical_discordant": int(canonical_hgvsc_discordant_total)       
                 },
                 "hgvsp_concordance": {
                     "total_concordant": int(total_hgvsp_concordant),
                     "total_discordant": int(total_hgvsp_discordant),
                     "total_compared": int(total_hgvsp_compared),
-                    "concordant_rate_percentage": concordant_hgvsp_rate
+                    "concordant_rate_percentage": concordant_hgvsp_rate,
+                    "canonical_concordant": int(canonical_hgvsp_concordant_total),
+                    "canonical_discordant": int(canonical_hgvsp_discordant_total)
                 }
             }
 

@@ -228,20 +228,71 @@ def analyze_transcript_hgvsc_matches(hg19_tx_data, hg38_tx_data):
         else:
             canonical_match_details = f"Canonical only in one build: hg19={canonical_tx_hg19}, hg38={canonical_tx_hg38}"
     
-    # ENHANCED: Matched transcript HGVSc analysis - separate concordant/discordant lists
+    # Matched transcript HGVSc analysis - separate concordant/discordant lists with version handling
     matched_concordant_list = []
     matched_discordant_list = []
+    canonical_concordant_list = []
+    canonical_discordant_list = []
     
     for tx_id, hg19_hgvsc, hg38_hgvsc, details in perfect_matches:
-        # Extract just the HGVSc part (remove transcript prefix if present)
-        hgvsc_clean = hg19_hgvsc.split(':')[-1] if ':' in hg19_hgvsc else hg19_hgvsc
-        matched_concordant_list.append(f"{tx_id}({hgvsc_clean})")
+        if ':' in hg19_hgvsc and ':' in hg38_hgvsc:
+            hg19_nm_full = hg19_hgvsc.split(':')[0]  # "NM_181798.1"
+            hg38_nm_full = hg38_hgvsc.split(':')[0]  # "NM_181798.2"
+            hgvsc_clean = hg19_hgvsc.split(':')[-1]  # "c.479C>T"
+            
+            # Extract versions
+            hg19_base = hg19_nm_full.split('.')[0] if '.' in hg19_nm_full else hg19_nm_full
+            hg38_base = hg38_nm_full.split('.')[0] if '.' in hg38_nm_full else hg38_nm_full
+            hg19_ver = hg19_nm_full.split('.')[1] if '.' in hg19_nm_full else ''
+            hg38_ver = hg38_nm_full.split('.')[1] if '.' in hg38_nm_full else ''
+            
+            # Format based on version differences
+            if hg19_ver == hg38_ver:
+                nm_display = hg19_nm_full  # "NM_181798.1"
+            else:
+                nm_display = f"{hg19_base}.({hg19_ver}→{hg38_ver})"  # "NM_181798.(1→2)"
+        else:
+            nm_display = tx_id  # fallback
+            hgvsc_clean = hg19_hgvsc
+        
+        # Check canonical status and track separately
+        is_canonical = hg19_tx_data.get(tx_id, {}).get('is_canonical', 0) == 1
+        
+        entry = f"{nm_display}({hgvsc_clean})"
+        matched_concordant_list.append(entry)
+        if is_canonical:
+            canonical_concordant_list.append(entry)
     
     for tx_id, hg19_hgvsc, hg38_hgvsc, details in mismatches:
-        # Extract clean HGVSc parts
-        hg19_clean = hg19_hgvsc.split(':')[-1] if ':' in hg19_hgvsc else hg19_hgvsc
-        hg38_clean = hg38_hgvsc.split(':')[-1] if ':' in hg38_hgvsc else hg38_hgvsc
-        matched_discordant_list.append(f"{tx_id}({hg19_clean}→{hg38_clean})")
+        if ':' in hg19_hgvsc and ':' in hg38_hgvsc:
+            hg19_nm_full = hg19_hgvsc.split(':')[0]
+            hg38_nm_full = hg38_hgvsc.split(':')[0]
+            hg19_clean = hg19_hgvsc.split(':')[-1]
+            hg38_clean = hg38_hgvsc.split(':')[-1]
+            
+            # Extract versions
+            hg19_base = hg19_nm_full.split('.')[0] if '.' in hg19_nm_full else hg19_nm_full
+            hg38_base = hg38_nm_full.split('.')[0] if '.' in hg38_nm_full else hg38_nm_full
+            hg19_ver = hg19_nm_full.split('.')[1] if '.' in hg19_nm_full else ''
+            hg38_ver = hg38_nm_full.split('.')[1] if '.' in hg38_nm_full else ''
+            
+            # Format based on version differences
+            if hg19_ver == hg38_ver:
+                nm_display = hg19_nm_full
+            else:
+                nm_display = f"{hg19_base}.({hg19_ver}→{hg38_ver})"
+        else:
+            nm_display = tx_id
+            hg19_clean = hg19_hgvsc
+            hg38_clean = hg38_hgvsc
+            
+        # Check canonical status and track separately  
+        is_canonical = hg19_tx_data.get(tx_id, {}).get('is_canonical', 0) == 1
+        
+        entry = f"{nm_display}({hg19_clean}→{hg38_clean})"
+        matched_discordant_list.append(entry)
+        if is_canonical:
+            canonical_discordant_list.append(entry)
     
     # Check high impact matches (for partial match rules)
     high_impact_matches = False
@@ -297,6 +348,8 @@ def analyze_transcript_hgvsc_matches(hg19_tx_data, hg38_tx_data):
         'matched_transcript_count': len(perfect_matches) + len(mismatches),
         'matched_hgvsc_concordant': '; '.join(matched_concordant_list) if matched_concordant_list else '',
         'matched_hgvsc_discordant': '; '.join(matched_discordant_list) if matched_discordant_list else '',
+        'canonical_hgvsc_concordant': '; '.join(canonical_concordant_list) if canonical_concordant_list else '',
+        'canonical_hgvsc_discordant': '; '.join(canonical_discordant_list) if canonical_discordant_list else '',
         
         # Legacy compatibility fields
         'hg19_canonical_transcript': canonical_tx_hg19 or '',
@@ -320,23 +373,30 @@ def compare_hgvsp_strings(hgvsp1, hgvsp2):
     if hgvsp1 == '' or hgvsp2 == '' or hgvsp1 == '-' or hgvsp2 == '-':
         return 'missing_data', 'empty values'
     
-    # Normalize both strings
-    norm1, success1, error1 = normalize_hgvs_string(hgvsp1)
-    norm2, success2, error2 = normalize_hgvs_string(hgvsp2)
-    
-    # If either failed to parse, fall back to string comparison
-    if not success1 or not success2:
-        simple_match = str(hgvsp1).strip() == str(hgvsp2).strip()
-        if simple_match:
-            return 'concordant', 'string match'
+    try:
+        parser = get_hgvs_parser()
+        
+        # Parse both HGVSp strings
+        var1 = parser.parse_hgvs_variant(str(hgvsp1).strip())
+        var2 = parser.parse_hgvs_variant(str(hgvsp2).strip())
+        
+        # Compare protein base (without version) and variant
+        # var1.ac = "NP_861463.1", var1.posedit = "Ala160Val"
+        protein1_base = var1.ac.split('.')[0] if '.' in var1.ac else var1.ac
+        protein2_base = var2.ac.split('.')[0] if '.' in var2.ac else var2.ac
+        
+        # Compare base protein + variant change
+        if protein1_base == protein2_base and str(var1.posedit) == str(var2.posedit):
+            return 'concordant', 'match'
         else:
-            return 'parse_error', 'parse failed'
-    
-    # Compare normalized strings
-    if norm1 == norm2:
-        return 'concordant', norm1
-    else:
-        return 'discordant', f'{norm1} vs {norm2}'
+            return 'discordant', 'mismatch'
+            
+    except Exception:
+        # Fallback to string comparison if parsing fails
+        if str(hgvsp1).strip() == str(hgvsp2).strip():
+            return 'concordant', 'match'
+        else:
+            return 'discordant', 'parse failed'
 
 
 def compare_canonical_hgvsp(hg19_hgvsp, hg38_hgvsp):
@@ -377,41 +437,78 @@ def analyze_transcript_hgvsp_matches(hg19_tx_data, hg38_tx_data):
         else:  # parse_error or missing_data
             parse_errors.append((tx_id, hg19_hgvsp, hg38_hgvsp, details))
     
-    # Create concordant/discordant lists for HGVSp - EXTRACT NP IDs
+    # Create concordant/discordant lists for HGVSp - EXTRACT NP IDs with version handling
     matched_concordant_list = []
     matched_discordant_list = []
+    canonical_concordant_list = []  
+    canonical_discordant_list = []  
     
     for tx_id, hg19_hgvsp, hg38_hgvsp, details in perfect_matches:
-        # Extract NP ID from HGVSp string instead of using transcript ID
-        if ':' in hg19_hgvsp:
-            np_id = hg19_hgvsp.split(':')[0]  # "NP_001005484.2"
+        if ':' in hg19_hgvsp and ':' in hg38_hgvsp:
+            hg19_np_full = hg19_hgvsp.split(':')[0]  # "NP_861463.1"
+            hg38_np_full = hg38_hgvsp.split(':')[0]  # "NP_861463.2"
             hgvsp_clean = hg19_hgvsp.split(':')[-1]  # "p.Glu36Gly"
+            
+            # Extract versions
+            hg19_base = hg19_np_full.split('.')[0] if '.' in hg19_np_full else hg19_np_full
+            hg38_base = hg38_np_full.split('.')[0] if '.' in hg38_np_full else hg38_np_full
+            hg19_ver = hg19_np_full.split('.')[1] if '.' in hg19_np_full else ''
+            hg38_ver = hg38_np_full.split('.')[1] if '.' in hg38_np_full else ''
+            
+            # Format based on version differences
+            if hg19_ver == hg38_ver:
+                np_display = hg19_np_full  # "NP_861463.1"
+            else:
+                np_display = f"{hg19_base}.({hg19_ver}→{hg38_ver})"  # "NP_861463.(1→2)"
         else:
-            np_id = tx_id  # fallback
+            np_display = tx_id  # fallback
             hgvsp_clean = hg19_hgvsp
         
-        matched_concordant_list.append(f"{np_id}({hgvsp_clean})")
+        # Check canonical status and track separately
+        is_canonical = hg19_tx_data.get(tx_id, {}).get('is_canonical', 0) == 1
+        
+        entry = f"{np_display}({hgvsp_clean})"
+        matched_concordant_list.append(entry)
+        if is_canonical:
+            canonical_concordant_list.append(entry)
     
     for tx_id, hg19_hgvsp, hg38_hgvsp, details in mismatches:
-        # Extract NP IDs and clean HGVSp parts
-        if ':' in hg19_hgvsp:
-            np_id = hg19_hgvsp.split(':')[0]
+        if ':' in hg19_hgvsp and ':' in hg38_hgvsp:
+            hg19_np_full = hg19_hgvsp.split(':')[0]
+            hg38_np_full = hg38_hgvsp.split(':')[0]
             hg19_clean = hg19_hgvsp.split(':')[-1]
-        else:
-            np_id = tx_id
-            hg19_clean = hg19_hgvsp
-            
-        if ':' in hg38_hgvsp:
             hg38_clean = hg38_hgvsp.split(':')[-1]
+            
+            # Extract versions  
+            hg19_base = hg19_np_full.split('.')[0] if '.' in hg19_np_full else hg19_np_full
+            hg38_base = hg38_np_full.split('.')[0] if '.' in hg38_np_full else hg38_np_full
+            hg19_ver = hg19_np_full.split('.')[1] if '.' in hg19_np_full else ''
+            hg38_ver = hg38_np_full.split('.')[1] if '.' in hg38_np_full else ''
+            
+            # Format based on version differences
+            if hg19_ver == hg38_ver:
+                np_display = hg19_np_full
+            else:
+                np_display = f"{hg19_base}.({hg19_ver}→{hg38_ver})"
         else:
+            np_display = tx_id
+            hg19_clean = hg19_hgvsp
             hg38_clean = hg38_hgvsp
             
-        matched_discordant_list.append(f"{np_id}({hg19_clean}→{hg38_clean})")
+        # Check canonical status and track separately  
+        is_canonical = hg19_tx_data.get(tx_id, {}).get('is_canonical', 0) == 1
+        
+        entry = f"{np_display}({hg19_clean}→{hg38_clean})"
+        matched_discordant_list.append(entry)
+        if is_canonical:
+            canonical_discordant_list.append(entry)
     
     return {
         'matched_transcript_count': len(perfect_matches) + len(mismatches),
         'matched_hgvsp_concordant': '; '.join(matched_concordant_list) if matched_concordant_list else '',
         'matched_hgvsp_discordant': '; '.join(matched_discordant_list) if matched_discordant_list else '',
+        'canonical_hgvsp_concordant': '; '.join(canonical_concordant_list) if canonical_concordant_list else '',
+        'canonical_hgvsp_discordant': '; '.join(canonical_discordant_list) if canonical_discordant_list else '',
         'perfect_matches': perfect_matches,
         'mismatches': mismatches,
         'parse_errors': parse_errors

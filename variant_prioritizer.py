@@ -228,9 +228,13 @@ def format_for_excel(df):
     output_df['HGVSc_MATCHED_concordant'] = df['matched_hgvsc_concordant'].fillna('')
     output_df['HGVSc_MATCHED_discordant'] = df['matched_hgvsc_discordant'].fillna('')
 
-    # HGVSp canonical columns 
+    # HGVS canonical columns 
     output_df['HGVSp_CANONICAL_hg19'] = df['hg19_canonical_hgvsp'].fillna('')
     output_df['HGVSp_CANONICAL_hg38'] = df['hg38_canonical_hgvsp'].fillna('')
+    output_df['canonical_hgvsc_concordant'] = df['canonical_hgvsc_concordant'].fillna('')
+    output_df['canonical_hgvsc_discordant'] = df['canonical_hgvsc_discordant'].fillna('')
+    output_df['canonical_hgvsp_concordant'] = df['canonical_hgvsp_concordant'].fillna('')
+    output_df['canonical_hgvsp_discordant'] = df['canonical_hgvsp_discordant'].fillna('')
     # HGSVp analysis
     output_df['CANONICAL_HGVSp_Match'] = df['CANONICAL_HGVSp_Match'].fillna('NO')
     output_df['HGVSp_MATCHED_transcripts'] = df['HGVSp_MATCHED_transcripts'].fillna(0)
@@ -311,11 +315,15 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'CANONICAL_HGVSc_Match': 'CANONICAL_HGVSc_Match',
         'hg19_canonical_hgvsc': 'HGVSc_CANONICAL_hg19',
         'hg38_canonical_hgvsc': 'HGVSc_CANONICAL_hg38',
+        'canonical_hgvsc_concordant': 'canonical_hgvsc_concordant',
+        'canonical_hgvsc_discordant': 'canonical_hgvsc_discordant',
         'hg19_hgvsp_canonical': 'HGVSp_CANONICAL_hg19', 
         'hg38_hgvsp_canonical': 'HGVSp_CANONICAL_hg38',
         # NEW HGVSp columns
         'CANONICAL_HGVSp_Match': 'CANONICAL_HGVSp_Match',
         'HGVSp_MATCHED_transcripts': 'HGVSp_MATCHED_transcripts',
+        'canonical_hgvsp_concordant': 'canonical_hgvsp_concordant', 
+        'canonical_hgvsp_discordant': 'canonical_hgvsp_discordant',
         'HGVSp_MATCHED_concordant': 'HGVSp_MATCHED_concordant',
         'HGVSp_MATCHED_discordant': 'HGVSp_MATCHED_discordant',
         # Matched HGVSc analysis

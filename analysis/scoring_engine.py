@@ -245,6 +245,11 @@ class ClinicalScorer:
             variant_info['priority_score'] = final_priority_score
             variant_info['priority_category'] = priority_category
             variant_info['discordance_summary'] = '; '.join(discordance_summary) if discordance_summary else 'Technical issues only'
+
+            variant_info['hg19_transcript_count'] = row.get('hg19_transcript_count', 0)
+            variant_info['hg38_transcript_count'] = row.get('hg38_transcript_count', 0) 
+            variant_info['matched_transcript_count'] = row.get('matched_transcript_count', 0)
+
             
             scored_variants.append(variant_info)
 
@@ -293,6 +298,17 @@ class ClinicalScorer:
             result_df['HGVSc_MATCHED_discordant'] = result_df['matched_hgvsc_discordant']
         else:
             result_df['HGVSc_MATCHED_discordant'] = ''
+
+        # Canonical HGVSc columns
+        if 'canonical_hgvsc_concordant' in result_df.columns:
+            result_df['canonical_hgvsc_concordant'] = result_df['canonical_hgvsc_concordant']
+        else:
+            result_df['canonical_hgvsc_concordant'] = ''
+
+        if 'canonical_hgvsc_discordant' in result_df.columns:
+            result_df['canonical_hgvsc_discordant'] = result_df['canonical_hgvsc_discordant']
+        else:
+            result_df['canonical_hgvsc_discordant'] = ''
     
 
         # ADD HGVSp COLUMNS
@@ -319,6 +335,17 @@ class ClinicalScorer:
             result_df['HGVSp_MATCHED_discordant'] = result_df['matched_hgvsp_discordant']
         else:
             result_df['HGVSp_MATCHED_discordant'] = ''
+        
+        # Canonical HGVSp columns  
+        if 'canonical_hgvsp_concordant' in result_df.columns:
+            result_df['canonical_hgvsp_concordant'] = result_df['canonical_hgvsp_concordant']
+        else:
+            result_df['canonical_hgvsp_concordant'] = ''
+
+        if 'canonical_hgvsp_discordant' in result_df.columns:
+            result_df['canonical_hgvsp_discordant'] = result_df['canonical_hgvsp_discordant']
+        else:
+            result_df['canonical_hgvsp_discordant'] = ''
 
         # Calculate HGVSp transcript count (count of transcripts with HGVSp analysis)
         def count_hgvsp_transcripts(row):

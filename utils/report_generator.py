@@ -165,7 +165,7 @@ class ReportGenerator:
         self.report_data['images'] = images
     
     def _collect_variant_data(self):
-        """Load variant data for clinical evidence table - FIXED: Show only variants with actual changes"""
+        """Load variant data for clinical evidence table : Show only variants with actual changes"""
         csv_file = self.input_dir / 'prioritized_variants.csv'
         if csv_file.exists():
             df = pd.read_csv(csv_file)
@@ -223,7 +223,12 @@ class ReportGenerator:
                     'Consequence_Relationship', 'Consequence_Change',
                     'High_Impact_Consequences_hg19', 'High_Impact_Consequences_hg38',
                     # HGVS columns
-                    'CANONICAL_HGVSc_Match', 'HGVSc_MATCHED_concordant', 'HGVSc_MATCHED_discordant'
+                    'CANONICAL_HGVSc_Match', 'HGVSc_MATCHED_concordant', 'HGVSc_MATCHED_discordant',
+                     # Canonical columns
+                    'canonical_hgvsc_concordant', 'canonical_hgvsc_discordant',
+                    'canonical_hgvsp_concordant', 'canonical_hgvsp_discordant',
+                    # HGVSp columns
+                    'CANONICAL_HGVSp_Match', 'HGVSp_MATCHED_concordant', 'HGVSp_MATCHED_discordant'
                 ]
                 
                 # Only include columns that exist
@@ -657,21 +662,15 @@ class ReportGenerator:
                                     {% endfor %}
                                 {% endif %}
                                 
-                                {# Count canonical transcripts for HGVSc summary #}
-                                {% set hgvsc_concordant_canonical_count = 0 %}
-                                {% set hgvsc_discordant_canonical_count = 0 %}
-                                
-                                {% for item in hgvsc_concordant_items %}
-                                    {% if 'NM_' in item %}
-                                        {% set hgvsc_concordant_canonical_count = hgvsc_concordant_canonical_count + 1 %}
-                                    {% endif %}
-                                {% endfor %}
-                                
-                                {% for item in hgvsc_discordant_items %}
-                                    {% if 'NM_' in item %}
-                                        {% set hgvsc_discordant_canonical_count = hgvsc_discordant_canonical_count + 1 %}
-                                    {% endif %}
-                                {% endfor %}
+                                {# Get canonical counts using actual available data #}
+                                {% set canonical_concordant_raw = variant.get('canonical_hgvsc_concordant', '') %}
+                                {% set canonical_discordant_raw = variant.get('canonical_hgvsc_discordant', '') %}
+                                {% set canonical_concordant = canonical_concordant_raw | string if canonical_concordant_raw is not none else '' %}
+                                {% set canonical_discordant = canonical_discordant_raw | string if canonical_discordant_raw is not none else '' %}
+                                {% set canonical_concordant = '' if canonical_concordant in ['', '-', 'nan'] else canonical_concordant %}
+                                {% set canonical_discordant = '' if canonical_discordant in ['', '-', 'nan'] else canonical_discordant %}
+                                {% set canonical_concordant_count = canonical_concordant.split(';') | length if canonical_concordant else 0 %}
+                                {% set canonical_discordant_count = canonical_discordant.split(';') | length if canonical_discordant else 0 %}
                                 
                                 {# Separate canonical vs other for details display #}
                                 {% set hgvsp_discordant_canonical = [] %}
@@ -731,8 +730,8 @@ class ReportGenerator:
                                 
                                 {% if hgvsc_concordant_items or hgvsc_discordant_items %}
                                     <div class="{% if hgvsc_discordant_items %}clinical-change{% else %}clinical-stable{% endif %}">
-                                        {# HGVSc Summary (as requested) #}
-                                        <strong>Summary:</strong> {{ hgvsc_concordant_items | length }} concordant ({{ hgvsc_concordant_canonical_count }} canonical), {{ hgvsc_discordant_items | length }} discordant ({{ hgvsc_discordant_canonical_count }} canonical)<br><br>
+                                        {# Simplified HGVSc Summary without total transcript counts #}
+                                        <strong>Summary:</strong> {{ hgvsc_concordant_items | length }} concordant ({{ canonical_concordant_count }} canonical), {{ hgvsc_discordant_items | length }} discordant ({{ canonical_discordant_count }} canonical)<br><br>
                                         
                                         {# Details: HGVSp first (protein-level priority) with grouping #}
                                         {% if grouped_hgvsp_canonical %}

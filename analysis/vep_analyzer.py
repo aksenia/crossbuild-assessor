@@ -490,14 +490,15 @@ class VEPAnalyzer:
             'matched_hgvsp_concordant': hgvsp_analysis['matched_hgvsp_concordant'],
             'matched_hgvsp_discordant': hgvsp_analysis['matched_hgvsp_discordant'],
             'hgvsp_matched_transcript_count': hgvsp_analysis['matched_transcript_count'],
-
-            'hg19_rest_hgvsc': hgvsc_analysis['hg19_rest_hgvsc'],
-            'hg38_rest_hgvsc': hgvsc_analysis['hg38_rest_hgvsc'],
+            'canonical_hgvsp_concordant': hgvsp_analysis.get('canonical_hgvsp_concordant', ''),
+            'canonical_hgvsp_discordant': hgvsp_analysis.get('canonical_hgvsp_discordant', ''),
             'hg19_transcript_count': hgvsc_analysis['hg19_transcript_count'],
             'hg38_transcript_count': hgvsc_analysis['hg38_transcript_count'],
             'matched_transcript_count': hgvsc_analysis['matched_transcript_count'],
             'matched_hgvsc_concordant': hgvsc_analysis['matched_hgvsc_concordant'],
-            'matched_hgvsc_discordant': hgvsc_analysis['matched_hgvsc_discordant']
+            'matched_hgvsc_discordant': hgvsc_analysis['matched_hgvsc_discordant'],
+            'canonical_hgvsc_concordant': hgvsc_analysis.get('canonical_hgvsc_concordant', ''),
+            'canonical_hgvsc_discordant': hgvsc_analysis.get('canonical_hgvsc_discordant', '')
         })
   
         return vep_analysis
