@@ -1,9 +1,13 @@
+RESULTS_DIR = config['results_dir']
+VEP_HG19_DIR = os.path.join(RESULTS_DIR, config['dirs']['vep_hg19'])
+VEP_HG38_DIR = os.path.join(RESULTS_DIR, config['dirs']['vep_hg38'])
+
 # VEP hg19
 rule vep_hg19:
     input:
-        vcf = config["input_vcf"]
+        vcf = rules.crossmap_liftover.output.vcf
     output:
-        txt = f"{config['dirs']['vep_hg19']}/{config['sample']}.vep.txt"
+        txt = f"{VEP_HG19_DIR}/{config['sample']}.vep.txt"
     params:
         cache = config["vep_cache"]["hg19"],
         fasta = config["ref"]["hg19_fasta"]
@@ -45,7 +49,7 @@ rule vep_hg38:
     input:
         vcf = rules.bcftools_liftover.output.vcf
     output:
-        txt = f"{config['dirs']['vep_hg38']}/{config['sample']}.vep.txt"
+        txt = f"{VEP_HG38_DIR}/{config['sample']}.vep.txt"
     params:
         cache = config["vep_cache"]["hg38"],
         fasta = config["ref"]["hg38_fasta"]

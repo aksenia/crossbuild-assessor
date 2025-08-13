@@ -28,6 +28,15 @@ RUN apt-get update && apt-get install -y \
 # Install CrossMap python library and other python dependencies
 RUN pip install --no-cache-dir CrossMap pysam snakemake
 
+# Install htslib for bgzip and tabix
+RUN curl -L https://github.com/samtools/htslib/releases/download/1.22/htslib-1.22.tar.bz2 -o htslib-1.22.tar.bz2 \
+    && tar -xjf htslib-1.22.tar.bz2 \
+    && cd htslib-1.22 \
+    && ./configure --prefix=/usr/local \
+    && make \
+    && make install
+
+
 # Install latest bcftools with liftover plugin
 RUN wget https://github.com/samtools/bcftools/releases/download/1.22/bcftools-1.22.tar.bz2 && \
     tar xjf bcftools-1.22.tar.bz2 && \
@@ -39,7 +48,7 @@ RUN wget https://github.com/samtools/bcftools/releases/download/1.22/bcftools-1.
     # Remove plugin makefile if exists (e.g. pgs.mk), just in case
     /bin/rm -f plugins/pgs.mk || true && \
     # Configure and build bcftools
-    ./configure && \
+    ./configure --prefix=/usr/local && \
     make -j$(nproc) && \
     # Build liftover plugin explicitly
     make plugins/liftover.so && \
