@@ -31,17 +31,20 @@ vep_install -a cf -s homo_sapiens -y GRCh37 -c /path/to/cache_dir
 ```
 This downloads the cache files needed by VEP for offline use.
 
-Use the tools inside the container:
+## Use the tools inside the container:
 
 - Run bcftools +liftover for VCF liftover operations.
 - Run vep for variant effect prediction.
 - Run CrossMap for alternative coordinate conversions.
 
-Run the full data preprocessing pipeline: 
+## Run the full data preprocessing pipeline: 
 
 in Singularity 
 
 ```bash
+# to run safely without writing to home directory
+mkdir tmp_home
+# set the tmp_home as HOME var before running your jobs
 singularity exec --no-home   -B $(pwd)/tmp_home:/tmp_home -B $(pwd)/data:/data -B $(pwd)/snake/config.yaml:/app/snake/config.yaml crossbuild.sif bash -c 'HOME=/tmp_home snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml -np'
 ```
 in Docker
