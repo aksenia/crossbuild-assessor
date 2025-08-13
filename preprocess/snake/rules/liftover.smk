@@ -36,7 +36,7 @@ rule bcftools_liftover:
                --src-fasta-ref {params.srcfa} \
                --fasta-ref {params.dstfa} \
                --write-src \
-               --reject {config[dirs][liftover_bcftools]}/{config[sample]}_rejected.vcf \
+               --reject {LIFTOVER_BCFT}/{config[sample]}_rejected.vcf \
                --write-reject
         """
 
