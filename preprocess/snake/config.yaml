@@ -1,0 +1,45 @@
+# config.yaml
+
+# -----------------
+# Run details
+# -----------------
+sample: clinvar-small
+input_vcf: /data/clinvar-small.vcf
+results_dir: /results
+
+# -----------------
+# References
+# -----------------
+ref:
+  hg19_fasta: /ref/hg19.fa
+  hg38_fasta: /ref/hg38.fa
+  liftover_chain: /ref/hg19ToHg38.over.chain
+
+# -----------------
+# VEP caches
+# -----------------
+vep_cache:
+  hg19: /ref/VEP/cache_hg19
+  hg38: /ref/VEP/cache_hg38
+
+# -----------------
+# Output subdirectories (relative to results_dir)
+# -----------------
+dirs:
+  liftover_crossmap: liftover/crossmap
+  liftover_bcftools: liftover/bcftools
+  comparison: comparison
+  vep_hg19: vep/hg19
+  vep_hg38: vep/hg38
+
+# -----------------
+# Tool locations inside container
+# -----------------
+tools:
+  crossmap_script: /app/liftover/annotate_with_liftover.py
+  parse_script: /app/liftover/parse_liftover.py
+
+# -----------------
+# Container image
+# -----------------
+container_image: "docker://crossbuild:latest"

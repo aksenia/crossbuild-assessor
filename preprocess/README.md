@@ -11,10 +11,11 @@ This Docker image bundles all tools required for crossbuild genomic analysis, in
 
 Once you clone this repository, simply:
 
-Build the Docker image:
+Build the image:
 
 ```bash
 docker build -t crossbuild .
+singularity build crossbuild.sif docker-daemon://crossbuild:latest
 ```
 
 Download VEP caches (required for offline annotation):
@@ -35,3 +36,16 @@ Use the tools inside the container:
 - Run bcftools +liftover for VCF liftover operations.
 - Run vep for variant effect prediction.
 - Run CrossMap for alternative coordinate conversions.
+
+Run the full data preprocessing pipeline: 
+
+in Singularity 
+
+```bash
+singularity exec --no-home   -B $(pwd)/tmp_home:/tmp_home -B $(pwd)/data:/data -B $(pwd)/snake/config.yaml:/app/snake/config.yaml crossbuild.sif bash -c 'HOME=/tmp_home snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml -np'
+```
+in Docker
+
+```bash
+docker run --rm -it  -v $(pwd)/data:/data -v $(pwd)/snake/config.yaml:/app/snake/config.yaml crossbuild snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml -np
+```

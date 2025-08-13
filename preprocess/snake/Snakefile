@@ -1,0 +1,18 @@
+configfile: "config.yaml"
+
+# Set global container for all rules
+container: config.get("container_image", "docker://crossbuild:latest")
+
+SAMPLE     = config["sample"]
+RESULTS    = config["results_dir"]
+
+rule all:
+    input:
+        f"{RESULTS}/{SAMPLE}/{SAMPLE}_comparison.tsv",
+        f"{RESULTS}/{SAMPLE}/{SAMPLE}.vep.hg19.txt",
+        f"{RESULTS}/{SAMPLE}/{SAMPLE}.vep.hg38.txt"
+
+# Include the rules
+include: "rules/liftover.smk"
+include: "rules/parse_liftover.smk"
+include: "rules/vep.smk"

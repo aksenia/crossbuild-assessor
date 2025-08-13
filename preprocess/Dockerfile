@@ -26,7 +26,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install CrossMap python library and other python dependencies
-RUN pip install --no-cache-dir CrossMap pysam
+RUN pip install --no-cache-dir CrossMap pysam snakemake
 
 # Install latest bcftools with liftover plugin
 RUN wget https://github.com/samtools/bcftools/releases/download/1.22/bcftools-1.22.tar.bz2 && \
@@ -67,8 +67,10 @@ COPY liftover/ ./liftover/
 # Copy the bash script for downloading VEP caches
 COPY download_vep_caches.sh .
 
+COPY snake/ ./snake/
+
 # Make scripts executable
-RUN chmod +x ./liftover/annotate_with_liftover.py
+RUN chmod +x ./liftover/*.py
 RUN chmod +x download_vep_caches.sh
 
 # Create non-root user for security and set ownership
