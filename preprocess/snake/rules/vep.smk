@@ -39,6 +39,8 @@ rule vep_hg19:
             --sift=b \
             --polyphen=b \
             --af_gnomadg \
+	    --output_format tab \
+	    --fields "Uploaded_variation,Location,Allele,Gene,Feature,Feature_type,Consequence,cDNA_position,CDS_position,Protein_position,Amino_acids,Codons,Existing_variation,IMPACT,DISTANCE,STRAND,FLAGS,MINIMISED,SYMBOL,SYMBOL_SOURCE,HGNC_ID,CANONICAL,ENSP,REFSEQ_MATCH,REFSEQ_OFFSET,GIVEN_REF,USED_REF,BAM_EDIT,SIFT,PolyPhen,EXON,INTRON,DOMAINS,HGVSc,HGVSp,HGVS_OFFSET,HGVSg,gnomADg_AF,gnomADg_AFR_AF,gnomADg_AMI_AF,gnomADg_AMR_AF,gnomADg_ASJ_AF,gnomADg_EAS_AF,gnomADg_FIN_AF,gnomADg_MID_AF,gnomADg_NFE_AF,gnomADg_REMAINING_AF,gnomADg_SAS_AF,CLIN_SIG,SOMATIC,PHENO,BIOTYPE,MOTIF_NAME,MOTIF_POS,HIGH_INF_POS,MOTIF_SCORE_CHANGE,TRANSCRIPTION_FACTORS" \
             -i {input.vcf} \
             -o {output.txt}
         """
@@ -67,18 +69,17 @@ rule vep_hg38:
             --transcript_version \
             --hgvs \
             --hgvsg \
-            --numbers \
-            --domains \
             --regulatory \
             --canonical \
             --protein \
-            --allele_number \
             --no_escape \
             --failed=1 \
             --exclude_predicted \
             --sift=b \
             --polyphen=b \
             --af_gnomadg \
+	    --output_format tab \
+	    --fields "Uploaded_variation,Location,Allele,Gene,Feature,Feature_type,Consequence,cDNA_position,CDS_position,Protein_position,Amino_acids,Codons,Existing_variation,IMPACT,DISTANCE,STRAND,FLAGS,MINIMISED,SYMBOL,SYMBOL_SOURCE,HGNC_ID,MANE,MANE_SELECT,MANE_PLUS_CLINICAL,CANONICAL,ENSP,REFSEQ_MATCH,REFSEQ_OFFSET,GIVEN_REF,USED_REF,BAM_EDIT,SIFT,PolyPhen,EXON,INTRON,DOMAINS,HGVSc,HGVSp,HGVS_OFFSET,HGVSg,gnomADg_AF,gnomADg_AFR_AF,gnomADg_AMI_AF,gnomADg_AMR_AF,gnomADg_ASJ_AF,gnomADg_EAS_AF,gnomADg_FIN_AF,gnomADg_MID_AF,gnomADg_NFE_AF,gnomADg_REMAINING_AF,gnomADg_SAS_AF,CLIN_SIG,SOMATIC,PHENO,BIOTYPE,MOTIF_NAME,MOTIF_POS,HIGH_INF_POS,MOTIF_SCORE_CHANGE,TRANSCRIPTION_FACTORS" \
             -i {input.vcf} \
             -o {output.txt}
         """
