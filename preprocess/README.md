@@ -60,7 +60,8 @@ docker run --rm -it  -v $(pwd)/data:/data -v $(pwd)/snake/config.yaml:/app/snake
 For large datasets you might want to submit a job to the cluster, or if you want to only submit computationally intensive jobs such as vep rules, you can do targeted rule execution in snakemake: 
 
 ```bash
-# your Docker/singularity command with correct mounts (see below) 'snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml --target-jobs vep+hg19"sample=sampleid  -p --cores 1'
+# your Docker/singularity command with correct mounts (see below) \
+	'snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml --target-jobs vep_hg19"sample=sampleid  -p --cores 1'
 ```
 
 
