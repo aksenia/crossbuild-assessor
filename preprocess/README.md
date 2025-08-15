@@ -55,16 +55,17 @@ docker run --rm -it  -v $(pwd)/data:/data -v $(pwd)/snake/config.yaml:/app/snake
 
 ## Directory mounting 
 
-To keep the container small, we need to mount all the reference and data directories needed. For convenience one can use a utility script to produce the final command with correct mounts: 
+To keep the container small, we need to mount all the reference and data directories needed. For convenience one can use a utility script to produce the final command with correct mounts. All the paths are on the *host* system:  
 
 in Singularity
 
 ```bash
-singularity exec crossbuild.sif python build_command.py   --vep_cache_hg19 /path/to/VEP/cache_hg19   --vep_cache_hg38 /path/to/VEP/cache_hg38   --hg19_fa /path/to/hg19.fa   --hg38_fa /path/to/hg38.fa   --chain_file /path/to/hg19ToHg38.over.chain   --cores 4
+singularity exec crossbuild.sif python build_command.py --tmp_home $(pwd)/tmp_home --data $(pwd)/data/sampleid --results $(pwd)/output/sampleid  --vep_cache_hg19 /path/to/VEP/cache_hg19   --vep_cache_hg38 /path/to/VEP/cache_hg38   --hg19_fa /path/to/hg19.fa   --hg38_fa /path/to/hg38.fa   --chain_file /path/to/hg19ToHg38.over.chain   --cores 4
 ```
+
 
 in Docker
 
 ```bash
- docker run --rm -it crossbuild python build_command.py   --vep_cache_hg19 /path/to/VEP/cache_hg19   --vep_cache_hg38 /path/to/VEP/cache_hg38   --hg19_fa /path/to/hg19.fa   --hg38_fa /path/to/hg38.fa   --chain_file /path/to/hg19ToHg38.over.chain   --cores 4   --engine docker
+docker run --rm -it crossbuild python build_command.py --data $(pwd)/data/sampleid --results $(pwd)/output/sampleid  --vep_cache_hg19 /path/to/VEP/cache_hg19   --vep_cache_hg38 /path/to/VEP/cache_hg38   --hg19_fa /path/to/hg19.fa   --hg38_fa /path/to/hg38.fa   --chain_file /path/to/hg19ToHg38.over.chain   --cores 4   --engine docker
 ``` 
