@@ -15,7 +15,7 @@ rule vep_hg19:
         "docker://your-container-image"
     shell:
         """
-        mkdir -p {config[dirs][vep_hg19]}
+        mkdir -p {VEP_HG19_DIR}
         vep \
             --dir_cache {params.cache} \
             --cache \
@@ -23,7 +23,6 @@ rule vep_hg19:
             --fasta {params.fasta} \
             --force_overwrite \
             --symbol \
-            --mane \
             --refseq \
             --transcript_version \
             --hgvs \
@@ -55,7 +54,7 @@ rule vep_hg38:
         fasta = config["ref"]["hg38_fasta"]
     shell:
         """
-        mkdir -p {config[dirs][vep_hg38]}
+        mkdir -p {VEP_HG38_DIR}
         vep \
             --dir_cache {params.cache} \
             --cache \

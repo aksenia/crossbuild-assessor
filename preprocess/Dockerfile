@@ -22,7 +22,8 @@ RUN apt-get update && apt-get install -y \
     liblzma-dev \
     libcurl4-openssl-dev \
     libwww-perl \
-    && cpanm --notest DBI Archive::Extract Archive::Tar Archive::Zip LWP::Simple \
+    libbio-db-hts-perl \
+    && cpanm --notest DBI Archive::Extract Archive::Tar Archive::Zip LWP::Simple Bio::DB::HTS \
     && rm -rf /var/lib/apt/lists/*
 
 # Install CrossMap python library and other python dependencies
