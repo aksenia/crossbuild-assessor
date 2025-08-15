@@ -25,8 +25,6 @@ rule vep_hg19:
     shell:
         """
         mkdir -p {VEP_HG19_DIR}
-	bcftools annotate -x ID input.vcf -Ov -o output.vcf
-
         vep \
             --dir_cache {params.cache} \
             --cache \
