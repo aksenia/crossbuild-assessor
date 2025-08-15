@@ -39,23 +39,34 @@ This downloads the cache files needed by VEP for offline use.
 
 ## Run the full data preprocessing pipeline: 
 
+Set the `--cores` according to resources on your system, mind `-n` flag for dry-run.
+
 in Singularity 
 
 ```bash
 # to run safely without writing to home directory
 mkdir tmp_home
 # set the tmp_home as HOME var before running your jobs
-singularity exec --no-home   -B $(pwd)/tmp_home:/tmp_home -B $(pwd)/data:/data -B $(pwd)/snake/config.yaml:/app/snake/config.yaml crossbuild.sif bash -c 'HOME=/tmp_home snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml -np'
+singularity exec --no-home   -B $(pwd)/tmp_home:/tmp_home -B $(pwd)/data:/data -B $(pwd)/snake/config.yaml:/app/snake/config.yaml crossbuild.sif bash -c 'HOME=/tmp_home snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml -np --cores 1'
 ```
 in Docker
 
 ```bash
-docker run --rm -it  -v $(pwd)/data:/data -v $(pwd)/snake/config.yaml:/app/snake/config.yaml crossbuild snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml -np
+docker run --rm -it  -v $(pwd)/data:/data -v $(pwd)/snake/config.yaml:/app/snake/config.yaml crossbuild snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml -np --cores 1
 ```
+
+## Large datasets
+
+For large datasets you might want to submit a job to the cluster, or if you want to only submit computationally intensive jobs such as vep rules, you can do targeted rule execution in snakemake: 
+
+```bash
+# your Docker/singularity command with correct mounts (see below) 'snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml --target-jobs vep+hg19"sample=sampleid  -p --cores 1'
+```
+
 
 ## Directory mounting 
 
-To keep the container small, we need to mount all the reference and data directories needed. For convenience one can use a utility script to produce the final command with correct mounts. All the paths are on the *host* system:  
+To keep the container small, we need to mount all the reference and data directories needed. For convenience one can use an utility script to produce the final command with correct mounts. All the paths are on the *host* system:  
 
 in Singularity
 
