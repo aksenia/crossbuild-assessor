@@ -3,19 +3,30 @@ VEP_HG19_DIR = os.path.join(RESULTS_DIR, config['dirs']['vep_hg19'])
 VEP_HG38_DIR = os.path.join(RESULTS_DIR, config['dirs']['vep_hg38'])
 
 # VEP hg19
-rule vep_hg19:
+
+rule strip_id_hg19:
     input:
         vcf = rules.crossmap_liftover.output.vcf
     output:
-        txt = f"{VEP_HG19_DIR}/{config['sample']}.vep.txt"
+        temp(f"{VEP_HG19_DIR}/{config['sample']}.noID.vcf")
+    shell:
+        """
+        bcftools annotate -x ID {input.vcf} -Ov -o {output}
+        """
+
+rule vep_hg19:
+    input:
+        vcf = rules.strip_id_hg19.output
+    output:
+        txt = f"{VEP_HG19_DIR}/{config['sample']}.vep.hg19.txt"
     params:
         cache = config["vep_cache"]["hg19"],
         fasta = config["ref"]["hg19_fasta"]
-    container:
-        "docker://your-container-image"
     shell:
         """
         mkdir -p {VEP_HG19_DIR}
+	bcftools annotate -x ID input.vcf -Ov -o output.vcf
+
         vep \
             --dir_cache {params.cache} \
             --cache \
@@ -46,11 +57,21 @@ rule vep_hg19:
         """
 
 # VEP hg38
-rule vep_hg38:
+rule strip_id_hg38:
     input:
         vcf = rules.bcftools_liftover.output.vcf
     output:
-        txt = f"{VEP_HG38_DIR}/{config['sample']}.vep.txt"
+        temp(f"{VEP_HG38_DIR}/{config['sample']}.noID.vcf")
+    shell:
+        """
+        bcftools annotate -x ID {input.vcf} -Ov -o {output}
+        """
+
+rule vep_hg38:
+    input:
+        vcf = rules.strip_id_hg38.output
+    output:
+        txt = f"{VEP_HG38_DIR}/{config['sample']}.vep.hg38.txt"
     params:
         cache = config["vep_cache"]["hg38"],
         fasta = config["ref"]["hg38_fasta"]
