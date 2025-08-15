@@ -75,13 +75,13 @@ RUN wget https://github.com/Ensembl/ensembl-vep/archive/refs/tags/release/113.3.
 COPY liftover/ ./liftover/
 
 # Copy the bash script for downloading VEP caches
-COPY download_vep_caches.sh .
+COPY download_vep_caches.sh build_command.py .
 
 COPY snake/ ./snake/
 
 # Make scripts executable
 RUN chmod +x ./liftover/*.py
-RUN chmod +x download_vep_caches.sh
+RUN chmod +x download_vep_caches.sh build_command.py
 
 # Create non-root user for security and set ownership
 RUN groupadd -r crossbuild && useradd -r -g crossbuild crossbuild && \
