@@ -8,9 +8,26 @@ RESULTS    = config["results_dir"]
 
 rule all:
     input:
-        f"{RESULTS}/{SAMPLE}/{SAMPLE}_comparison.tsv",
-        f"{RESULTS}/{SAMPLE}/{SAMPLE}.vep.hg19.txt",
-        f"{RESULTS}/{SAMPLE}/{SAMPLE}.vep.hg38.txt"
+        f"{RESULTS}/{SAMPLE}.vep.hg19.txt",
+        f"{RESULTS}/{SAMPLE}.vep.hg38.txt",
+        f"{RESULTS}/{SAMPLE}_comparison.tsv",
+
+rule copy_results_to_root:
+    input:
+        hg19 = f"{RESULTS}/vep/hg19/{SAMPLE}.vep.hg19.txt",
+        hg38 = f"{RESULTS}/vep/hg38/{SAMPLE}.vep.hg38.txt",
+        comparison = f"{RESULTS}/liftover/comparison/{SAMPLE}_comparison.tsv"
+    output:
+        hg19 = f"{RESULTS}/{SAMPLE}.vep.hg19.txt",
+        hg38 = f"{RESULTS}/{SAMPLE}.vep.hg38.txt",
+        comparison = f"{RESULTS}/{SAMPLE}_comparison.tsv"
+    shell:
+        """
+        mkdir -p {RESULTS}
+        cp {input.hg19} {output.hg19}
+        cp {input.hg38} {output.hg38}
+        cp {input.comparison} {output.comparison}
+        """
 
 # Include the rules
 include: "rules/liftover.smk"
