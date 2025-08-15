@@ -61,7 +61,7 @@ For large datasets you might want to submit a job to the cluster, or if you want
 
 ```bash
 # your Docker/singularity command with correct mounts (see below) \
-	'snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml --target-jobs vep_hg19"sample=sampleid  -p --cores 1'
+	'snakemake --snakefile /app/snake/Snakefile --configfile /app/snake/config.yaml --target-jobs vep_hg19:sample=sampleid  -p --cores 1'
 ```
 
 
