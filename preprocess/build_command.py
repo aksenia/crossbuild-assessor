@@ -7,7 +7,7 @@ def build_command(user_paths, cores=1, engine="singularity"):
 
     user_paths: dict with keys -
         data, results, vep_cache_hg19, vep_cache_hg38,
-        hg19_fa, hg38_fa, chain_file, config_yaml (optional)
+        hg19_fa, hg38_fa, chain_file, config_yaml (local path to config.yaml)
         tmp_home (only required for singularity)
 
     cores: int, number of CPU cores to use
@@ -24,7 +24,8 @@ def build_command(user_paths, cores=1, engine="singularity"):
         "hg38_fa": os.path.abspath(user_paths["hg38_fa"]),
         "hg38_fa_fai": os.path.abspath(user_paths["hg38_fa"]) + ".fai",
         "chain_file": os.path.abspath(user_paths["chain_file"]),
-        "config_yaml": os.path.abspath(user_paths.get("config_yaml", "./data/test-small/config.yaml"))
+        # Mount the local config.yaml into /app/snake/config.yaml inside container
+        "config_yaml": os.path.abspath(user_paths["config_yaml"])
     }
 
     if engine == "singularity":
@@ -92,7 +93,7 @@ if __name__ == "__main__":
     parser.add_argument("--hg19_fa", required=True, help="Host path for hg19 fasta (mounted to /ref/hg19.fa)")
     parser.add_argument("--hg38_fa", required=True, help="Host path for hg38 fasta (mounted to /ref/hg38.fa)")
     parser.add_argument("--chain_file", required=True, help="Host path for liftover chain file (mounted to /ref/hg19ToHg38.over.chain)")
-    parser.add_argument("--config_yaml", default="./data/test-small/config.yaml", help="Host config.yaml path (mounted to /app/snake/config.yaml)")
+    parser.add_argument("--config_yaml", required=True, help="Local host path to config.yaml (mounted to /app/snake/config.yaml)")
     parser.add_argument("--cores", type=int, default=1, help="Number of CPU cores for Snakemake")
     parser.add_argument("--engine", choices=["singularity", "docker"], default="singularity", help="Container engine to build command for")
     args = parser.parse_args()
@@ -114,4 +115,3 @@ if __name__ == "__main__":
 
     command = build_command(user_paths, args.cores, args.engine)
     print(command)
-
