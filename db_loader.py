@@ -85,6 +85,7 @@ OUTPUT:
     - hg38_vep: VEP annotations for hg38 build
 """
 
+import os
 import sqlite3
 import pandas as pd
 import argparse
@@ -92,6 +93,85 @@ import json
 import re
 from pathlib import Path
 import sys
+
+# COMPLETE column mapping for all relevant VEP fields
+VEP_COLUMN_MAP = {
+    'Uploaded_variation': ['#Uploaded_variation', 'Uploaded_variation'],
+    'Location': ['Location', 'Uploaded_variation'],
+    'Allele': ['Allele'],
+    'Gene': ['Gene'],
+    'Feature': ['Feature', 'Feature_ID', 'Transcript_ID'],
+    'Feature_type': ['Feature_type'],
+    'Consequence': ['Consequence'],
+    'IMPACT': ['IMPACT', 'Impact'],
+    'SYMBOL': ['SYMBOL', 'Symbol'],
+    'SIFT': ['SIFT'],
+    'PolyPhen': ['PolyPhen', 'Polyphen'],
+    'gnomADg_AF': ['gnomADg_AF', 'gnomAD_AF', 'AF'],
+    'CLIN_SIG': ['CLIN_SIG', 'Clinical_significance', 'ClinVar_CLNSIG'],
+    'HGVSc': ['HGVSc', 'HGVS_c'],
+    'HGVSp': ['HGVSp', 'HGVS_p'],
+    'CANONICAL': ['CANONICAL', 'Canonical'],
+    'MANE': ['MANE'],
+    'MANE_SELECT': ['MANE_SELECT'],
+    'MANE_PLUS_CLINICAL': ['MANE_PLUS_CLINICAL']
+}
+
+def find_column(df, column_aliases):
+    """Find first existing column from aliases"""
+    for alias in column_aliases:
+        if alias in df.columns:
+            return alias
+    return None
+
+def get_safe_column_value(row, df, column_key, default=''):
+    """Safely get column value using column mapping"""
+    column_aliases = VEP_COLUMN_MAP.get(column_key, [column_key])
+    actual_column = find_column(df, column_aliases)
+    if actual_column:
+        return row.get(actual_column, default)
+    return default
+
+def extract_refseq_from_hgvsc(hgvsc_value):
+    """Extract RefSeq ID from HGVSc field (e.g., 'NM_001385641.1:c.1796del' -> 'NM_001385641.1')"""
+    if pd.isna(hgvsc_value) or ':' not in str(hgvsc_value):
+        return None
+    return str(hgvsc_value).split(':')[0].strip()
+
+def process_mane_columns(row, df):
+    """Process MANE-related columns with defensive handling"""
+    return {
+        'mane': get_safe_column_value(row, df, 'MANE'),
+        'mane_select': get_safe_column_value(row, df, 'MANE_SELECT'),
+        'mane_plus_clinical': get_safe_column_value(row, df, 'MANE_PLUS_CLINICAL'),
+        'refseq_transcript_id': extract_refseq_from_hgvsc(get_safe_column_value(row, df, 'HGVSc'))
+    }
+
+def parse_custom_vep_id(vep_id):
+    """
+    Parse custom VEP ID format like '1/878175/AG//A' or 'chr1/1520188/C//T'
+    
+    Args:
+        vep_id: Custom VEP variant ID
+        
+    Returns:
+        tuple: (chrom, pos, ref, alt) or (None, None, None, None) if parsing fails
+    """
+    if pd.isna(vep_id):
+        return None, None, None, None
+        
+    parts = str(vep_id).split('/')
+    if len(parts) >= 5:  # Format: chrom/pos/ref//alt
+        try:
+            chrom = parts[0]
+            pos = int(parts[1])
+            ref = parts[2]
+            alt = parts[4]  # Skip empty part from '//'
+            return chrom, pos, ref, alt
+        except (ValueError, IndexError):
+            return None, None, None, None
+    
+    return None, None, None, None
 
 def create_database_schema(db_path):
     """Create database tables WITHOUT unique constraints for faster loading"""
@@ -113,6 +193,8 @@ def create_database_schema(db_path):
             source_chrom TEXT,
             source_pos INTEGER,
             source_alleles TEXT,
+            source_ref TEXT,
+            source_alt TEXT,     
             flip TEXT,
             swap TEXT,
             liftover_hg38_chrom TEXT,
@@ -134,9 +216,6 @@ def create_database_schema(db_path):
             uploaded_variation TEXT,
             chr TEXT,
             pos INTEGER,
-            pos_original INTEGER,
-            ref_allele TEXT,
-            alt_allele TEXT,
             location TEXT,
             allele TEXT,
             gene TEXT,
@@ -151,7 +230,15 @@ def create_database_schema(db_path):
             clin_sig TEXT,
             hgvsc TEXT,
             hgvsp TEXT,
-            canonical TEXT
+            canonical TEXT,
+            mane TEXT,
+            mane_select TEXT,
+            mane_plus_clinical TEXT,
+            refseq_transcript_id TEXT,
+            extracted_chrom TEXT,
+            extracted_pos INTEGER,
+            extracted_ref TEXT,
+            extracted_alt TEXT
             -- NO UNIQUE constraint here for faster loading
         )
     """
@@ -168,81 +255,6 @@ def create_database_schema(db_path):
     conn.commit()
     conn.close()
     print("✓ Optimized database schema created (unique constraints will be added after loading)")
-
-
-def parse_comparison_alleles(alleles_str):
-    """
-    Parse comparison alleles and convert to VEP format
-    
-    Args:
-        alleles_str: Comma-separated alleles (e.g., "A,AG" or "A,G")
-    
-    Returns:
-        tuple: (vep_ref, vep_alt) in VEP notation
-    
-    Examples:
-        "A,G" → ("A", "G")           # SNV
-        "A,AG" → ("-", "G")          # Insertion
-        "AG,A" → ("G", "-")          # Deletion
-    """
-    if pd.isna(alleles_str):
-        return None, None
-    
-    parts = str(alleles_str).split(',')
-    if len(parts) != 2:
-        return None, None
-    
-    ref, alt = parts[0].strip(), parts[1].strip()
-    
-    # Convert to VEP notation for indels
-    if len(ref) < len(alt) and alt.startswith(ref):
-        # Insertion: "A,AG" → "-", "G" (VEP removes the common prefix)
-        vep_ref = "-"
-        vep_alt = alt[len(ref):]
-    elif len(ref) > len(alt):
-        # Deletion: handle various deletion formats
-        if len(alt) == 0:
-            # Pure deletion: "AGC," → "AGC", "-"
-            vep_ref = ref
-            vep_alt = "-"
-        elif ref.startswith(alt):
-            # Deletion with common prefix: "AGC,A" → "GC", "-"
-            vep_ref = ref[len(alt):]
-            vep_alt = "-"
-        else:
-            # Complex deletion
-            vep_ref = ref
-            vep_alt = alt
-    else:
-        # SNV: keep as-is
-        vep_ref = ref
-        vep_alt = alt
-    
-    return vep_ref, vep_alt
-
-def adjust_comparison_coordinates(pos, ref, alt):
-    """
-    Adjust comparison coordinates to match VEP normalization
-    
-    VEP coordinate normalization:
-    - SNVs: no change (VEP pos = original pos)
-    - Indels: +1 (VEP pos = original pos + 1)
-    
-    Args:
-        pos: Original position
-        ref: Reference allele in VEP format
-        alt: Alternative allele in VEP format
-    
-    Returns:
-        int: VEP-normalized position
-    """
-    if ref == "-" or alt == "-":
-        # Indel: VEP shifts position +1
-        return pos + 1
-    else:
-        # SNV: VEP keeps same position
-        return pos
-
 
 def load_comparison_data(comparison_file, db_path):
     """Load comparison file with optimized bulk loading"""
@@ -265,7 +277,7 @@ def load_comparison_data(comparison_file, db_path):
     
     print(f"Loaded {len(df):,} comparison records")
     
-    # Validate required columns (same as before)
+    # Validate required columns
     required_cols = [
         'mapping_status', 'source_chrom', 'source_pos', 'source_alleles',
         'flip', 'swap', 'bcftools_hg38_chrom', 'bcftools_hg38_pos', 
@@ -276,43 +288,44 @@ def load_comparison_data(comparison_file, db_path):
     if missing_cols:
         raise ValueError(f"Missing required columns in comparison file: {missing_cols}")
     
-    # Convert coordinates and alleles to VEP format (same logic as before)
-    coordinate_adjustments = 0
+    # Process comparison data
     processed_data = []
     skipped_variants = 0
     
     for _, row in df.iterrows():
-        # Parse alleles and convert to VEP format
-        vep_ref, vep_alt = parse_comparison_alleles(row['source_alleles'])
-        
-        # Adjust coordinates to VEP normalization - handle NaN values
-        if vep_ref is not None and pd.notna(row['source_pos']):
-            vep_source_pos = adjust_comparison_coordinates(row['source_pos'], vep_ref, vep_alt)
-            
-            # Handle bcftools position (may be NaN for failed liftover)
-            if pd.notna(row['bcftools_hg38_pos']):
-                vep_bcftools_pos = adjust_comparison_coordinates(row['bcftools_hg38_pos'], vep_ref, vep_alt)
+        # Parse alleles without normalization
+        if pd.notna(row['source_alleles']) and ',' in str(row['source_alleles']):
+            parts = str(row['source_alleles']).split(',')
+            if len(parts) == 2:
+                parsed_ref = parts[0].strip()
+                parsed_alt = parts[1].strip()
             else:
-                vep_bcftools_pos = None
-            
-            # Handle liftover position (may be NaN for failed liftover)  
-            if pd.notna(row['liftover_hg38_pos']):
-                vep_liftover_pos = adjust_comparison_coordinates(row['liftover_hg38_pos'], vep_ref, vep_alt)
-            else:
-                vep_liftover_pos = None
-            
-            if vep_source_pos != row['source_pos']:
-                coordinate_adjustments += 1
+                parsed_ref = ""
+                parsed_alt = ""
         else:
-            # Keep original if parsing failed or source_pos is NaN
-            vep_source_pos = row['source_pos'] if pd.notna(row['source_pos']) else None
-            vep_bcftools_pos = row['bcftools_hg38_pos'] if pd.notna(row['bcftools_hg38_pos']) else None
-            vep_liftover_pos = row['liftover_hg38_pos'] if pd.notna(row['liftover_hg38_pos']) else None
-            vep_ref = ""
-            vep_alt = ""
+            parsed_ref = ""
+            parsed_alt = ""
+        
+        # Use original coordinates directly
+        if pd.notna(row['source_pos']):
+            source_pos = row['source_pos']
+        else:
+            source_pos = None
+            
+        # Handle bcftools position (may be NaN for failed liftover)
+        if pd.notna(row['bcftools_hg38_pos']):
+            bcftools_pos = row['bcftools_hg38_pos']
+        else:
+            bcftools_pos = None
+        
+        # Handle liftover position (may be NaN for failed liftover)  
+        if pd.notna(row['liftover_hg38_pos']):
+            liftover_pos = row['liftover_hg38_pos']
+        else:
+            liftover_pos = None
         
         # Skip variants with missing essential coordinates
-        if vep_source_pos is None:
+        if source_pos is None:
             skipped_variants += 1
             if skipped_variants <= 10:
                 print(f"Warning: Skipping variant with missing source position: {row['source_chrom']}:{row['source_pos']}")
@@ -321,30 +334,32 @@ def load_comparison_data(comparison_file, db_path):
         processed_data.append({
             'mapping_status': row['mapping_status'],
             'source_chrom': row['source_chrom'],
-            'source_pos': int(vep_source_pos),
-            'source_alleles': f"{vep_ref}/{vep_alt}" if vep_ref and vep_alt else row['source_alleles'],
+            'source_pos': int(source_pos),
+            'source_alleles': f"{parsed_ref}/{parsed_alt}" if parsed_ref and parsed_alt else row['source_alleles'],
+            'source_ref': parsed_ref if parsed_ref else '',
+            'source_alt': parsed_alt if parsed_alt else '', 
             'flip': row['flip'],
             'swap': row['swap'],
             'liftover_hg38_chrom': row['liftover_hg38_chrom'],
-            'liftover_hg38_pos': int(vep_liftover_pos) if vep_liftover_pos is not None else None,
+            'liftover_hg38_pos': int(liftover_pos) if liftover_pos is not None else None,
             'bcftools_hg38_chrom': row['bcftools_hg38_chrom'],
-            'bcftools_hg38_pos': int(vep_bcftools_pos) if vep_bcftools_pos is not None else None,
-            'bcftools_hg38_ref': vep_ref,
-            'bcftools_hg38_alt': vep_alt,
+            'bcftools_hg38_pos': int(bcftools_pos) if bcftools_pos is not None else None,
+            'bcftools_hg38_ref': parsed_ref,
+            'bcftools_hg38_alt': parsed_alt,
             'pos_match': 1 if row['pos_match'] in ['TRUE', True, 1] else 0,
             'gt_match': 1 if row['gt_match'] in ['TRUE', True, 1] else 0
         })
 
     processed_df = pd.DataFrame(processed_data)
     
-    # OPTIMIZED: Remove duplicates in pandas BEFORE database insertion
+    # Remove duplicates in pandas BEFORE database insertion
     print(f"Removing duplicates from {len(processed_df):,} records...")
     original_count = len(processed_df)
     processed_df = processed_df.drop_duplicates(subset=['source_chrom', 'source_pos', 'source_alleles'])
     duplicates_removed = original_count - len(processed_df)
     print(f"✓ Removed {duplicates_removed:,} duplicates, {len(processed_df):,} unique records remain")
 
-    # FIXED: Use chunked bulk insert to avoid SQL variable limit
+    # Use chunked bulk insert to avoid SQL variable limit
     conn = sqlite3.connect(db_path)
     try:
         print("Performing optimized chunked bulk insert...")
@@ -365,7 +380,6 @@ def load_comparison_data(comparison_file, db_path):
 
         if skipped_variants > 0:
             print(f"✓ Skipped {skipped_variants:,} variants with missing source coordinates")
-        print(f"✓ Applied coordinate/allele adjustments to {coordinate_adjustments:,} variants")
         print("✓ All coordinates normalized to VEP format")
                 
     except Exception as e:
@@ -373,37 +387,6 @@ def load_comparison_data(comparison_file, db_path):
         raise
     finally:
         conn.close()
-
-
-def parse_vep_variant_id(variant_id):
-    """
-    Parse VEP variant ID into components
-    
-    Args:
-        variant_id: VEP variant identifier (e.g., "1_69134_A/G" or "chr1_69134_A/G")
-    
-    Returns:
-        tuple: (chromosome, position, ref_allele, alt_allele)
-    """
-    if pd.isna(variant_id):
-        print(f"DEBUG: variant_id is NaN")
-        return None, None, None, None
-    
-    print(f"DEBUG: Processing variant_id: '{variant_id}' (type: {type(variant_id)})")
-    # Pattern: chr_pos_ref/alt
-    pattern = r'^(.+?)_(\d+)_([^/]+)/(.+)$'
-    match = re.match(pattern, str(variant_id))
-    
-    if match:
-        chr_part = match.group(1).replace('chr', '')  # Remove chr prefix if present
-        pos = int(match.group(2))
-        ref = match.group(3)
-        alt = match.group(4)
-        print(f"DEBUG: Successfully parsed - chr:{chr_part}, pos:{pos}, ref:{ref}, alt:{alt}")
-        return chr_part, pos, ref, alt
-    else:
-        print(f"DEBUG: REGEX FAILED for variant_id: '{variant_id}'")
-        return None, None, None, None
 
 def load_vep_data(vep_file, db_path, genome_build):
     """Load VEP annotation data with optimized bulk loading"""
@@ -427,7 +410,7 @@ def load_vep_data(vep_file, db_path, genome_build):
     if header_idx is None:
         raise ValueError(f"Could not find VEP header line starting with '#Uploaded_variation' in {vep_file}")
     
-    # OPTIMIZED: Read in larger chunks and use bulk loading
+    # Read in larger chunks and use bulk loading
     chunk_size = 100000  # Larger chunks for better performance
     total_records = 0
     
@@ -445,41 +428,66 @@ def load_vep_data(vep_file, db_path, genome_build):
         # Parse variant IDs and prepare data
         parsed_data = []
         for _, row in chunk_df.iterrows():
-            chr_part, pos, ref, alt = parse_vep_variant_id(row['#Uploaded_variation'])
+            # Extract coordinates from custom VEP ID
+            uploaded_var = get_safe_column_value(row, chunk_df, 'Uploaded_variation')
+            extracted_chrom, extracted_pos, extracted_ref, extracted_alt = parse_custom_vep_id(uploaded_var)
+            
+            # Use extracted coordinates for compatibility
+            chr_part = extracted_chrom
+            pos = extracted_pos
+
+            # Process MANE columns (only present in hg38)
+            mane_data = process_mane_columns(row, chunk_df) 
             
             # Convert gnomAD frequency to float
             gnomad_af = None
-            if 'gnomADg_AF' in row and pd.notna(row['gnomADg_AF']) and row['gnomADg_AF'] != '-':
+            gnomad_raw = get_safe_column_value(row, chunk_df, 'gnomADg_AF')
+            if gnomad_raw and gnomad_raw != '-':
                 try:
-                    gnomad_af = float(row['gnomADg_AF'])
+                    gnomad_af = float(gnomad_raw)
                 except ValueError:
                     gnomad_af = None
-            
+
+            # Create allele string for this build
+            if extracted_ref and extracted_alt:
+                allele_string = f"{extracted_ref}/{extracted_alt}"
+            else:
+                allele_string = None
+
+
             parsed_data.append({
-                'uploaded_variation': row['#Uploaded_variation'],
+                'uploaded_variation': get_safe_column_value(row, chunk_df, 'Uploaded_variation'),
                 'chr': chr_part,
                 'pos': pos,
-                'pos_original': pos,
-                'ref_allele': ref,
-                'alt_allele': alt,
-                'location': row.get('Location', ''),
-                'allele': row.get('Allele', ''),
-                'gene': row.get('Gene', ''),
-                'feature': row.get('Feature', ''),
-                'feature_type': row.get('Feature_type', ''),
-                'consequence': row.get('Consequence', ''),
-                'impact': row.get('IMPACT', ''),
-                'symbol': row.get('SYMBOL', ''),
-                'sift': row.get('SIFT', ''),
-                'polyphen': row.get('PolyPhen', ''),
+                'location': get_safe_column_value(row, chunk_df, 'Location'),
+                'gene': get_safe_column_value(row, chunk_df, 'Gene'),
+                'feature': get_safe_column_value(row, chunk_df, 'Feature'),
+                'feature_type': get_safe_column_value(row, chunk_df, 'Feature_type'),
+                'consequence': get_safe_column_value(row, chunk_df, 'Consequence'),
+                'impact': get_safe_column_value(row, chunk_df, 'IMPACT'),
+                'symbol': get_safe_column_value(row, chunk_df, 'SYMBOL'),
+                'sift': get_safe_column_value(row, chunk_df, 'SIFT'),
+                'polyphen': get_safe_column_value(row, chunk_df, 'PolyPhen'),
                 'gnomadg_af': gnomad_af,
-                'clin_sig': row.get('CLIN_SIG', ''),
-                'hgvsc': row.get('HGVSc', ''),
-                'hgvsp': row.get('HGVSp', ''),
-                'canonical': row.get('CANONICAL', '') 
+                'clin_sig': get_safe_column_value(row, chunk_df, 'CLIN_SIG'),
+                'hgvsc': get_safe_column_value(row, chunk_df, 'HGVSc'),
+                'hgvsp': get_safe_column_value(row, chunk_df, 'HGVSp'),
+                'canonical': get_safe_column_value(row, chunk_df, 'CANONICAL'),
+                # MANE FIELDS (hg38 only, will be empty for hg19)
+                'mane': mane_data['mane'],
+                'mane_select': mane_data['mane_select'],
+                'mane_plus_clinical': mane_data['mane_plus_clinical'],
+                'refseq_transcript_id': mane_data['refseq_transcript_id'],
+                # EXTRACTED CUSTOM ID FIELDS
+                'extracted_chrom': extracted_chrom,
+                'extracted_pos': extracted_pos,
+                'extracted_ref': extracted_ref,
+                'extracted_alt': extracted_alt,
+                'allele': allele_string
             })
+
         
-        # OPTIMIZED: Remove duplicates in pandas and bulk insert
+        # Remove duplicates in pandas and bulk insert
         chunk_processed = pd.DataFrame(parsed_data)
         
         # Remove duplicates within this chunk
@@ -553,12 +561,15 @@ def add_unique_constraints_and_indexes(db_path):
         # VEP table indexes
         for build in ['hg19', 'hg38']:
             table = f'{build}_vep'
-            cursor.execute(f"CREATE INDEX idx_{build}_coords ON {table}(chr, pos, ref_allele, alt_allele)")
-            cursor.execute(f"CREATE INDEX idx_{build}_coords_orig ON {table}(chr, pos_original)")
+            cursor.execute(f"CREATE INDEX idx_{build}_coords ON {table}(extracted_chrom, extracted_pos, extracted_ref, extracted_alt)")
             cursor.execute(f"CREATE INDEX idx_{build}_feature ON {table}(feature, feature_type)")
             cursor.execute(f"CREATE INDEX idx_{build}_consequence ON {table}(consequence, impact)")
             cursor.execute(f"CREATE INDEX idx_{build}_symbol ON {table}(symbol)")
         
+        # Additional comparison table indexes for matching
+        cursor.execute("CREATE INDEX idx_comp_source_alleles ON comparison(source_chrom, source_pos, source_ref, source_alt)")
+        cursor.execute("CREATE INDEX idx_comp_bcftools_alleles ON comparison(bcftools_hg38_chrom, bcftools_hg38_pos, bcftools_hg38_ref, bcftools_hg38_alt)")
+
         conn.commit()
         print("✓ All unique constraints and indexes created successfully")
         
@@ -588,13 +599,23 @@ def verify_database(db_path):
     cursor.execute("""
         SELECT 
             COUNT(DISTINCT c.source_chrom || ':' || c.source_pos) as total_variants,
-            COUNT(DISTINCT CASE WHEN h19.pos IS NOT NULL THEN c.source_chrom || ':' || c.source_pos END) as hg19_matched,
-            COUNT(DISTINCT CASE WHEN h38.pos IS NOT NULL THEN c.source_chrom || ':' || c.source_pos END) as hg38_matched
+            COUNT(DISTINCT CASE WHEN h19.extracted_pos IS NOT NULL THEN c.source_chrom || ':' || c.source_pos END) as hg19_matched,
+            COUNT(DISTINCT CASE WHEN h38.extracted_pos IS NOT NULL THEN c.source_chrom || ':' || c.source_pos END) as hg38_matched
         FROM comparison c
-        LEFT JOIN hg19_vep h19 ON (c.source_chrom = h19.chr AND c.source_pos = h19.pos)
-        LEFT JOIN hg38_vep h38 ON (c.bcftools_hg38_chrom = h38.chr AND c.bcftools_hg38_pos = h38.pos)
+        LEFT JOIN hg19_vep h19 ON (
+            c.source_chrom = h19.extracted_chrom AND 
+            c.source_pos = h19.extracted_pos AND
+            c.source_ref = h19.extracted_ref AND
+            c.source_alt = h19.extracted_alt
+        )
+        LEFT JOIN hg38_vep h38 ON (
+            c.bcftools_hg38_chrom = h38.extracted_chrom AND
+            c.bcftools_hg38_pos = h38.extracted_pos AND
+            c.bcftools_hg38_ref = h38.extracted_ref AND
+            c.bcftools_hg38_alt = h38.extracted_alt
+        )
     """)
-    
+
     match_stats = cursor.fetchone()
     total, hg19_matched, hg38_matched = match_stats
     
@@ -609,7 +630,7 @@ def verify_database(db_path):
     for row in cursor.fetchall():
         print(f"    {row}")
     
-    cursor.execute("SELECT chr, pos, ref_allele, alt_allele, consequence, symbol FROM hg19_vep LIMIT 3")
+    cursor.execute("SELECT extracted_chrom, extracted_pos, extracted_ref, extracted_alt, allele, consequence, symbol FROM hg19_vep LIMIT 3")
     print("  HG19 VEP table sample:")
     for row in cursor.fetchall():
         print(f"    {row}")
@@ -687,7 +708,7 @@ USAGE:
         print(f"Error loading configuration: {e}")
         sys.exit(1)
     
-    db_path = Path(config['database']['path'])
+    db_path = Path(os.path.expanduser(config['database']['path']))
     
     # Check if database exists
     if db_path.exists() and not args.force:
@@ -701,9 +722,9 @@ USAGE:
         create_database_schema(db_path)
         
         # Step 2: Load all data quickly (no constraint checking)
-        load_comparison_data(config['input_files']['comparison'], db_path)
-        load_vep_data(config['input_files']['hg19_vep'], db_path, 'hg19')
-        load_vep_data(config['input_files']['hg38_vep'], db_path, 'hg38')
+        load_comparison_data(os.path.expanduser(config['input_files']['comparison']), db_path)
+        load_vep_data(os.path.expanduser(config['input_files']['hg19_vep']), db_path, 'hg19')
+        load_vep_data(os.path.expanduser(config['input_files']['hg38_vep']), db_path, 'hg38')
         
         # Step 3: Add unique constraints and optimized indexes AFTER loading
         add_unique_constraints_and_indexes(db_path)
