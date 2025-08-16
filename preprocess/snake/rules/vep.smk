@@ -4,19 +4,9 @@ VEP_HG38_DIR = os.path.join(RESULTS_DIR, config['dirs']['vep_hg38'])
 
 # VEP hg19
 
-rule strip_id_hg19:
-    input:
-        vcf = rules.crossmap_liftover.output.vcf
-    output:
-        temp(f"{VEP_HG19_DIR}/{config['sample']}.noID.vcf")
-    shell:
-        """
-        bcftools annotate -x ID {input.vcf} -Ov -o {output}
-        """
-
 rule vep_hg19:
     input:
-        vcf = rules.strip_id_hg19.output
+        vcf = rules.crossmap_liftover.output.vcf
     output:
         txt = f"{VEP_HG19_DIR}/{config['sample']}.vep.hg19.txt"
     params:
@@ -54,20 +44,9 @@ rule vep_hg19:
             -o {output.txt}
         """
 
-# VEP hg38
-rule strip_id_hg38:
-    input:
-        vcf = rules.bcftools_liftover.output.vcf
-    output:
-        temp(f"{VEP_HG38_DIR}/{config['sample']}.noID.vcf")
-    shell:
-        """
-        bcftools annotate -x ID {input.vcf} -Ov -o {output}
-        """
-
 rule vep_hg38:
     input:
-        vcf = rules.strip_id_hg38.output
+        vcf = rules.add_id_hg38.output.vcf
     output:
         txt = f"{VEP_HG38_DIR}/{config['sample']}.vep.hg38.txt"
     params:

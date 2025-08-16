@@ -3,9 +3,19 @@ LIFTOVER_CRMP = os.path.join(RESULTS_DIR, config['dirs']['liftover_crossmap'])
 LIFTOVER_BCFT = os.path.join(RESULTS_DIR, config['dirs']['liftover_bcftools'])
 
 # CrossMap liftover
-rule crossmap_liftover:
+rule add_id_hg19:
     input:
         vcf = config["input_vcf"]
+    output:
+        temp(f"{LIFTOVER_CRMP}/{config['sample']}.ID.vcf")
+    shell:
+        """
+        bcftools annotate --set-id '%CHROM/%POS/%REF//%ALT' {input.vcf} -Ov -o {output}
+        """
+
+rule crossmap_liftover:
+    input:
+        vcf = rules.add_id_hg19.output
     output:
         vcf = f"{LIFTOVER_CRMP}/{config['sample']}.vcf"
     params:
@@ -23,7 +33,7 @@ rule bcftools_liftover:
     input:
         vcf = rules.crossmap_liftover.output.vcf
     output:
-        vcf = f"{LIFTOVER_BCFT}/{config['sample']}.bt.vcf"
+        temp(f"{LIFTOVER_BCFT}/{config['sample']}.bt_noid.vcf")
     params:
         chain  = config["ref"]["liftover_chain"],
         srcfa  = config["ref"]["hg19_fasta"],
@@ -31,7 +41,7 @@ rule bcftools_liftover:
     shell:
         """
         mkdir -p {LIFTOVER_BCFT}
-        bcftools +liftover -Ov {input.vcf} -o {output.vcf} \
+        bcftools +liftover -Ov {input.vcf} -o {output} \
             -- -c {params.chain} \
                --src-fasta-ref {params.srcfa} \
                --fasta-ref {params.dstfa} \
@@ -40,3 +50,12 @@ rule bcftools_liftover:
                --write-reject
         """
 
+rule add_id_hg38:
+    input:
+        vcf = rules.bcftools_liftover.output
+    output:
+        vcf = f"{LIFTOVER_BCFT}/{config['sample']}.bt.vcf"
+    shell:
+        """
+        bcftools annotate --set-id '%CHROM/%POS/%REF//%ALT' {input.vcf} -Ov -o {output.vcf}
+        """
