@@ -14,7 +14,6 @@ from config.scoring_config import (
     BASE_SCORES
 )
 from utils.impact_utils import calculate_impact_transition_magnitude
-from utils.hgvs_utils import compare_canonical_hgvsp
 
 
 class ClinicalScorer:

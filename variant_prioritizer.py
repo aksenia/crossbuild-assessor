@@ -71,7 +71,6 @@ from utils.clinical_utils import (
     parse_polyphen_prediction
 )
 from utils.transcript_utils import (
-    normalize_transcript_id,
     extract_genotype_from_alleles
 )
 from utils.impact_utils import (
@@ -223,6 +222,14 @@ def format_for_excel(df):
     # Priority transcript selection
     output_df['Transcript_CrossBuild_Status'] = df['transcript_crossbuild_status'].fillna('No_Transcripts')
     output_df['Priority_Transcript_CrossBuild'] = df['priority_transcript_crossbuild'].fillna('NONE')
+
+    # Priority transcript HGVS analysis
+    output_df['HGVS_c_hg19'] = df['priority_hgvsc_hg19'].fillna('')
+    output_df['HGVS_c_hg38'] = df['priority_hgvsc_hg38'].fillna('')
+    output_df['HGVS_p_hg19'] = df['priority_hgvsp_hg19'].fillna('')
+    output_df['HGVS_p_hg38'] = df['priority_hgvsp_hg38'].fillna('')
+    output_df['HGVS_c_Concordance'] = df['priority_hgvsc_concordance'].fillna('No_Analysis')
+    output_df['HGVS_p_Concordance'] = df['priority_hgvsp_concordance'].fillna('No_Analysis')
   
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
@@ -313,6 +320,13 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         # Priority transcript selection
         'transcript_crossbuild_status': 'Transcript_CrossBuild_Status',
         'priority_transcript_crossbuild': 'Priority_Transcript_CrossBuild',
+        # Priority transcript HGVS analysis
+        'priority_hgvsc_hg19': 'HGVS_c_hg19',
+        'priority_hgvsc_hg38': 'HGVS_c_hg38',
+        'priority_hgvsp_hg19': 'HGVS_p_hg19',
+        'priority_hgvsp_hg38': 'HGVS_p_hg38',
+        'priority_hgvsc_concordance': 'HGVS_c_Concordance',
+        'priority_hgvsp_concordance': 'HGVS_p_Concordance',
         # Matched transcript analysis
         'consequence_relationship': 'Consequence_Relationship',
         'consequence_change': 'Consequence_Change',

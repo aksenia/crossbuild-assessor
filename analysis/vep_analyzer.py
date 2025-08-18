@@ -6,7 +6,7 @@ transcript-level discordances between genome builds.
 """
 
 import pandas as pd
-from utils.transcript_utils import normalize_transcript_id, extract_genotype_from_alleles
+from utils.transcript_utils import extract_genotype_from_alleles
 #from utils.data_utils import clean_string
 from utils.clinical_utils import (
     is_pathogenic_clinical_significance,
@@ -16,7 +16,7 @@ from utils.clinical_utils import (
     normalize_clinical_significance
 )
 from config.constants import VEP_CONSEQUENCE_IMPACT
-from utils.hgvs_utils import analyze_transcript_hgvsc_matches, analyze_transcript_hgvsp_matches
+from utils.hgvs_utils import analyze_priority_transcript_hgvs
 
 class VEPAnalyzer:
     """Analyzes VEP annotations to identify discordances between genome builds"""
@@ -178,24 +178,22 @@ class VEPAnalyzer:
                 }
             
             # Step 1: Same transcript ID analysis (for same_transcript_consequence_changes)
-            hg19_tx_dict = {}  # transcript_base_id -> data
-            hg38_tx_dict = {}  # transcript_base_id -> data
+            hg19_tx_dict = {}  # full_transcript_id -> data
+            hg38_tx_dict = {}  # full_transcript_id -> data
             
-            # Normalize transcript IDs and group by base ID
+            # Use full transcript IDs directly
             for tx_id, data in hg19_transcripts.items():
-                base_id = normalize_transcript_id(tx_id)
-                if base_id:
-                    hg19_tx_dict[base_id] = data
+                if tx_id:
+                    hg19_tx_dict[tx_id] = data
             
             for tx_id, data in hg38_transcripts.items():
-                base_id = normalize_transcript_id(tx_id)
-                if base_id:
-                    hg38_tx_dict[base_id] = data
+                if tx_id:
+                    hg38_tx_dict[tx_id] = data
             
-            # Find same transcript IDs with different consequences
-            for base_id in set(hg19_tx_dict.keys()) & set(hg38_tx_dict.keys()):
-                hg19_data = hg19_tx_dict[base_id]
-                hg38_data = hg38_tx_dict[base_id]
+            # Find same transcript IDs (exact version match) with different consequences
+            for tx_id in set(hg19_tx_dict.keys()) & set(hg38_tx_dict.keys()):
+                hg19_data = hg19_tx_dict[tx_id]
+                hg38_data = hg38_tx_dict[tx_id]
                 
                 # Use robust string comparison
                 consequence_match = clean_string(hg19_data['consequence']) == clean_string(hg38_data['consequence'])
@@ -205,11 +203,11 @@ class VEPAnalyzer:
                     problematic_transcripts_hg19.append(f"{hg19_data['feature_id']}({hg19_data['consequence']})")
                     problematic_transcripts_hg38.append(f"{hg38_data['feature_id']}({hg38_data['consequence']})")
             
-            # Step 2: Set-based transcript relationship analysis
-            all_hg19_transcript_ids = {normalize_transcript_id(tx_id) for tx_id in hg19_transcripts.keys() if normalize_transcript_id(tx_id)}
-            all_hg38_transcript_ids = {normalize_transcript_id(tx_id) for tx_id in hg38_transcripts.keys() if normalize_transcript_id(tx_id)}
+            # Step 2: Set-based transcript relationship analysis (exact version matching)
+            all_hg19_transcript_ids = {tx_id for tx_id in hg19_transcripts.keys() if tx_id}
+            all_hg38_transcript_ids = {tx_id for tx_id in hg38_transcripts.keys() if tx_id}
             
-            # Transcript relationship
+            # Transcript relationship (exact version matching)
             if len(all_hg19_transcript_ids) == 0 and len(all_hg38_transcript_ids) == 0:
                 transcript_relationship = 'no_transcripts'
             elif all_hg19_transcript_ids == all_hg38_transcript_ids:
@@ -223,7 +221,7 @@ class VEPAnalyzer:
             else:
                 transcript_relationship = 'partial_overlap_transcripts'
 
-            # Step 3: Set-based consequence relationship analysis - FIXED
+            # Step 3: Set-based consequence relationship analysis
             all_hg19_consequences = set()
             all_hg38_consequences = set()
 
@@ -476,18 +474,18 @@ class VEPAnalyzer:
 
         # MANE analysis 
         hg38_mane_flag, hg38_mane_transcript_id, hg38_mane_details = self._analyze_mane_annotations(hg38_annotations)
-        # Check if MANE transcripts from hg38 are present in hg19
+        
+        # Check if MANE transcripts from hg38 are present in hg19 (exact version match)
         hg19_transcript_ids = set()
         for _, row in hg19_transcripts_df.iterrows():
-            base_id = normalize_transcript_id(row['feature'])
-            if base_id:
-                hg19_transcript_ids.add(base_id)
+            full_id = row['feature']
+            if full_id:
+                hg19_transcript_ids.add(full_id)
         
-        # Find which MANE transcripts are present in hg19
+        # Find which MANE transcripts are present in hg19 (exact version match)
         hg19_mane_present = []
         if hg38_mane_transcript_id:
-            mane_base_id = normalize_transcript_id(hg38_mane_transcript_id)
-            if mane_base_id and mane_base_id in hg19_transcript_ids:
+            if hg38_mane_transcript_id in hg19_transcript_ids:
                 hg19_mane_present.append(hg38_mane_transcript_id)
         
         hg19_mane_transcript_id = hg19_mane_present[0] if hg19_mane_present else None
@@ -512,6 +510,10 @@ class VEPAnalyzer:
             hg19_transcripts_df, hg38_transcripts_df, hg38_mane_flag, hg38_mane_transcript_id
         )
 
+        # Analyze HGVSc concordance 
+        priority_hgvs_analysis = analyze_priority_transcript_hgvs(
+            hg19_transcripts_df, hg38_transcripts_df, transcript_crossbuild_status, priority_transcript_crossbuild
+    )
 
         # Add HGVSc results to the return dictionary
         vep_analysis.update({
@@ -527,87 +529,18 @@ class VEPAnalyzer:
             'hg19_mane_details': hg19_mane_details,
             # Priority transcript selection using MANE-first hierarchy
             'transcript_crossbuild_status': transcript_crossbuild_status,
-            'priority_transcript_crossbuild': priority_transcript_crossbuild
+            'priority_transcript_crossbuild': priority_transcript_crossbuild,
+            # Priority transcript HGVS analysis
+            'priority_hgvsc_hg19': priority_hgvs_analysis['priority_hgvsc_hg19'],
+            'priority_hgvsc_hg38': priority_hgvs_analysis['priority_hgvsc_hg38'],
+            'priority_hgvsp_hg19': priority_hgvs_analysis['priority_hgvsp_hg19'],
+            'priority_hgvsp_hg38': priority_hgvs_analysis['priority_hgvsp_hg38'],
+            'priority_hgvsc_concordance': priority_hgvs_analysis['priority_hgvsc_concordance'],
+            'priority_hgvsp_concordance': priority_hgvs_analysis['priority_hgvsp_concordance']
         })
   
         return vep_analysis
-    
-
-    def _analyze_hgvsc_concordance(self, hg19_transcripts_df, hg38_transcripts_df):
-        """Analyze HGVSc concordance with canonical transcript priority"""
         
-        # Extract transcript data with HGVSc and canonical info
-        hg19_tx_data = {}
-        hg38_tx_data = {}
-        
-        # Build hg19 transcript dictionary with HGVSc
-        for _, row in hg19_transcripts_df.iterrows():
-            base_id = normalize_transcript_id(row['feature'])
-            if base_id:
-                hg19_tx_data[base_id] = {
-                    'hgvsc': row.get('hgvsc', ''),
-                    'hgvsp': row.get('hgvsp', ''),
-                    'consequence': row.get('consequence', ''),
-                    'impact': row.get('impact', ''),
-                    'is_canonical': row.get('is_canonical', 0),
-                    'feature_id': row.get('feature', '')
-                }
-        
-        # Build hg38 transcript dictionary with HGVSc
-        for _, row in hg38_transcripts_df.iterrows():
-            base_id = normalize_transcript_id(row['feature'])
-            if base_id:
-                hg38_tx_data[base_id] = {
-                    'hgvsc': row.get('hgvsc', ''),
-                    'hgvsp': row.get('hgvsp', ''),
-                    'consequence': row.get('consequence', ''),
-                    'impact': row.get('impact', ''),
-                    'is_canonical': row.get('is_canonical', 0),
-                    'feature_id': row.get('feature', '')
-                }
-        
-        # Analyze HGVSc matches
-        hgvsc_results = analyze_transcript_hgvsc_matches(hg19_tx_data, hg38_tx_data)
-        
-        return hgvsc_results
-    
-    def _analyze_hgvsp_concordance(self, hg19_transcripts_df, hg38_transcripts_df):
-        """Analyze HGVSp concordance with canonical transcript priority"""
-        
-        # Extract transcript data with HGVSp (same logic as HGVSc but for protein)
-        hg19_tx_data = {}
-        hg38_tx_data = {}
-        
-        # Build hg19 transcript dictionary with HGVSp
-        for _, row in hg19_transcripts_df.iterrows():
-            base_id = normalize_transcript_id(row['feature'])
-            if base_id:
-                hg19_tx_data[base_id] = {
-                    'hgvsp': row.get('hgvsp', ''),
-                    'consequence': row.get('consequence', ''),
-                    'impact': row.get('impact', ''),
-                    'is_canonical': row.get('is_canonical', 0),
-                    'feature_id': row.get('feature', '')
-                }
-        
-        # Build hg38 transcript dictionary with HGVSp
-        for _, row in hg38_transcripts_df.iterrows():
-            base_id = normalize_transcript_id(row['feature'])
-            if base_id:
-                hg38_tx_data[base_id] = {
-                    'hgvsp': row.get('hgvsp', ''),
-                    'consequence': row.get('consequence', ''),
-                    'impact': row.get('impact', ''),
-                    'is_canonical': row.get('is_canonical', 0),
-                    'feature_id': row.get('feature', '')
-                }
-        
-        # Analyze HGVSp matches using the new function
-        from utils.hgvs_utils import analyze_transcript_hgvsp_matches
-        hgvsp_results = analyze_transcript_hgvsp_matches(hg19_tx_data, hg38_tx_data)
-        
-        return hgvsp_results
-    
     def _analyze_mane_annotations(self, annotations_df):
         """
         Analyze all MANE annotations for a variant and determine priority

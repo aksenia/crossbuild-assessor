@@ -121,66 +121,105 @@ class PrioritizationPlotter:
                       fontsize=12, transform=ax.transAxes)
             ax.set_title('Clinical Significance Distribution by Build', fontsize=12, fontweight='bold')
 
-
     def _plot_canonical_hgvsc_match(self, df, ax):
-        """Plot 2: Placeholder - MANE-based HGVS Analysis (To be implemented in Phase 2)"""
-        print("2. Creating placeholder for MANE-based HGVS Analysis...")
+        """Plot 2: HGVSc Concordance Rate by Clinical Significance Groups"""
+        print("2. Creating HGVSc Concordance Rate by Clinical Significance...")
         
-        if len(df) > 0 and 'Clinical_Change_Direction' in df.columns:
-            # Create simple clinical change distribution as placeholder
-            clinical_counts = df['Clinical_Change_Direction'].value_counts()
-            
-            # Group all stable categories together
-            stable_count = sum(count for cat, count in clinical_counts.items() if str(cat).startswith('STABLE_'))
-            
-            # Create simplified data for placeholder
-            plot_data = {'MANE Analysis (Pending)': stable_count}
-            
-            # Add other categories
-            other_categories = {cat: count for cat, count in clinical_counts.items() 
-                              if not str(cat).startswith('STABLE_')}
-            if other_categories:
-                plot_data.update(other_categories)
-            
-            # Use same color scheme as original
-            colors = []
-            clinical_colors = self.plot_colors.get('clinical_transitions', {})
-            
-            for cat in plot_data.keys():
-                if cat == 'MANE Analysis (Pending)':
-                    colors.append(clinical_colors.get('stable', '#1f77b4'))
-                elif '→ PATHOGENIC' in str(cat):
-                    colors.append(clinical_colors.get('to_pathogenic', '#d62728'))
-                elif 'FROM PATHOGENIC →' in str(cat):
-                    colors.append(clinical_colors.get('from_pathogenic', '#ff7f0e'))
-                elif '→ BENIGN' in str(cat):
-                    colors.append(clinical_colors.get('to_benign', '#2ca02c'))
-                elif 'FROM BENIGN →' in str(cat):
-                    colors.append(clinical_colors.get('from_benign', '#17becf'))
+        if len(df) > 0 and 'Clinical_Change_Direction' in df.columns and 'priority_hgvsc_concordance' in df.columns:
+            # Create clinical significance groups
+            def categorize_clinical_significance(row):
+                clin_change = str(row.get('Clinical_Change_Direction', ''))
+                
+                if clin_change.startswith('STABLE_PATHOGENIC'):
+                    return 'Stable Pathogenic'
+                elif clin_change.startswith('STABLE_BENIGN'):
+                    return 'Stable Benign'
+                elif clin_change.startswith('STABLE_VUS'):
+                    return 'Stable VUS'
+                elif clin_change.startswith('STABLE_'):
+                    return 'Stable Other'
+                elif any(x in clin_change for x in ['PATHOGENIC', 'BENIGN', 'VUS']):
+                    return 'Transitions'
                 else:
-                    colors.append(clinical_colors.get('other', '#9467bd'))
+                    return 'No Clinical Data'
             
-            # Create simple bar plot
-            ax.bar([0], [sum(plot_data.values())], color=colors[0], width=0.7)
+            # Apply categorization
+            df_plot = df.copy()
+            df_plot['Clinical_Group'] = df_plot.apply(categorize_clinical_significance, axis=1)
             
-            ax.set_xlabel('MANE-Based HGVS Analysis', fontweight='bold')
-            ax.set_ylabel('Variant Count', fontweight='bold')
-            ax.set_title('MANE-Based HGVS Analysis vs Clinical Changes (Placeholder)', 
-                        fontsize=12, fontweight='bold')
-            ax.set_xticks([0])
-            ax.set_xticklabels(['Pending MANE\nImplementation'], rotation=0, ha='center')
-            ax.grid(True, alpha=0.3, axis='y')
+            # Calculate HGVSc concordance rates for each group
+            clinical_groups = ['Stable Pathogenic', 'Stable Benign', 'Stable VUS', 'Transitions', 'Stable Other', 'No Clinical Data']
             
-            # Add count label on single bar
-            total_count = sum(plot_data.values())
-            ax.text(0, total_count + total_count*0.01, f'{int(total_count)}', 
-                   ha='center', va='bottom', fontweight='bold')
+            match_rates = []
+            mismatch_rates = []
+            no_analysis_rates = []
+            group_counts = []
+            filtered_groups = []
+            
+            for group in clinical_groups:
+                group_df = df_plot[df_plot['Clinical_Group'] == group]
+                count = len(group_df)
+                
+                if count > 0:
+                    matches = (group_df['priority_hgvsc_concordance'] == 'Match').sum()
+                    mismatches = (group_df['priority_hgvsc_concordance'] == 'Mismatch').sum()
+                    no_analysis = (group_df['priority_hgvsc_concordance'] == 'No_Analysis').sum()
+                    
+                    match_rates.append(matches/count*100)
+                    mismatch_rates.append(mismatches/count*100)
+                    no_analysis_rates.append(no_analysis/count*100)
+                    group_counts.append(count)
+                    filtered_groups.append(group)
+            
+            if filtered_groups:
+                # Use colors from config
+                priority_colors = self.plot_colors.get('priority', ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4'])
+                
+                # Create stacked bar plot
+                x = range(len(filtered_groups))
+                
+                # Plot stacked bars: Match (green), Mismatch (red), No Analysis (gray)
+                bars1 = ax.bar(x, match_rates, label='Match', color=priority_colors[2], alpha=0.8)
+                bars2 = ax.bar(x, mismatch_rates, bottom=match_rates, label='Mismatch', color=priority_colors[0], alpha=0.8)
+                bars3 = ax.bar(x, no_analysis_rates, bottom=[m+mm for m,mm in zip(match_rates, mismatch_rates)], 
+                            label='No Analysis', color='#7f7f7f', alpha=0.8)
+                
+                # Customize plot
+                ax.set_xlabel('Clinical Significance Groups', fontweight='bold')
+                ax.set_ylabel('HGVSc Concordance Rate (%)', fontweight='bold')
+                ax.set_title('MANE-Based HGVSc Concordance by Clinical Significance', 
+                            fontsize=12, fontweight='bold')
+                
+                ax.set_xticks(x)
+                ax.set_xticklabels([f"{group}\n(n={count})" for group, count in zip(filtered_groups, group_counts)], 
+                                rotation=45, ha='right')
+                
+                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+                ax.grid(True, alpha=0.3, axis='y')
+                ax.set_ylim(0, 100)
+                
+                # Add percentage labels on bars
+                for i, (bar1, bar2) in enumerate(zip(bars1, bars2)):
+                    if match_rates[i] > 5:
+                        ax.text(bar1.get_x() + bar1.get_width()/2, bar1.get_height()/2,
+                            f'{match_rates[i]:.0f}%', ha='center', va='center',
+                            fontweight='bold', color='white', fontsize=8)
+                    if mismatch_rates[i] > 5:
+                        ax.text(bar2.get_x() + bar2.get_width()/2, 
+                            match_rates[i] + bar2.get_height()/2,
+                            f'{mismatch_rates[i]:.0f}%', ha='center', va='center',
+                            fontweight='bold', color='white', fontsize=8)
+            else:
+                ax.text(0.5, 0.5, 'No variants with\nclinical significance data', 
+                    ha='center', va='center', fontsize=12, transform=ax.transAxes)
+                ax.set_title('MANE-Based HGVSc Concordance by Clinical Significance', 
+                            fontsize=12, fontweight='bold')
         else:
-            ax.text(0.5, 0.5, 'Placeholder for\nMANE-based HGVS Analysis', ha='center', va='center',
-                    fontsize=12, transform=ax.transAxes)
-            ax.set_title('MANE-Based HGVS Analysis vs Clinical Changes (Placeholder)', 
+            ax.text(0.5, 0.5, 'Required columns not\navailable in data', 
+                ha='center', va='center', fontsize=12, transform=ax.transAxes)
+            ax.set_title('MANE-Based HGVSc Concordance by Clinical Significance', 
                         fontsize=12, fontweight='bold')
-        
+            
     def _plot_impact_transitions_grouped(self, df, ax):
         """Plot 2: Impact transitions with grouping (REDESIGNED)"""
         print("2. Creating impact transitions with grouping...")

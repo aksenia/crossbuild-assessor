@@ -13,7 +13,6 @@ from .clinical_utils import (
 )
 
 from .transcript_utils import (
-    normalize_transcript_id,
     extract_genotype_from_alleles
 )
 
@@ -34,7 +33,6 @@ __all__ = [
     'parse_polyphen_prediction',
     
     # Transcript utilities
-    'normalize_transcript_id',
     'extract_genotype_from_alleles',
     
     # Impact utilities
