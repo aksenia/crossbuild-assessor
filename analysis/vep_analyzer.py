@@ -43,8 +43,12 @@ class VEPAnalyzer:
         SELECT DISTINCT 
             c.source_chrom,
             c.source_pos,
+            c.source_ref,
+            c.source_alt,
             c.bcftools_hg38_chrom,
             c.bcftools_hg38_pos,
+            c.bcftools_hg38_ref, 
+            c.bcftools_hg38_alt,
             c.mapping_status,
             c.pos_match,
             c.gt_match,
@@ -95,6 +99,7 @@ class VEPAnalyzer:
         vep_analyses = []
         
         for _, variant_row in chunk_variants.iterrows():
+
             chrom = variant_row['source_chrom']
             pos = variant_row['source_pos']
             hg38_chrom = variant_row['bcftools_hg38_chrom']
@@ -103,20 +108,24 @@ class VEPAnalyzer:
             # Get VEP annotations for this specific variant - TARGETED QUERIES
             hg19_query = """
             SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig, hgvsc, hgvsp, 
+                extracted_chrom, extracted_pos, extracted_ref, extracted_alt, allele,
+                mane, mane_select, mane_plus_clinical, refseq_transcript_id,
             CASE WHEN CANONICAL = 'YES' THEN 1 ELSE 0 END as is_canonical
             FROM hg19_vep 
-            WHERE chr = ? AND pos = ?
+            WHERE extracted_chrom = ? AND extracted_pos = ? AND extracted_ref = ? AND extracted_alt = ?
             """
             
             hg38_query = """
             SELECT feature_type, consequence, impact, symbol, feature, sift, polyphen, gnomadg_af, clin_sig, hgvsc, hgvsp, 
+                extracted_chrom, extracted_pos, extracted_ref, extracted_alt, allele,
+                mane, mane_select, mane_plus_clinical, refseq_transcript_id,
             CASE WHEN CANONICAL = 'YES' THEN 1 ELSE 0 END as is_canonical
             FROM hg38_vep 
-            WHERE chr = ? AND pos = ?
+            WHERE extracted_chrom = ? AND extracted_pos = ? AND extracted_ref = ? AND extracted_alt = ?
             """
             
-            hg19_annotations = pd.read_sql_query(hg19_query, conn, params=[chrom, pos])
-            hg38_annotations = pd.read_sql_query(hg38_query, conn, params=[hg38_chrom, hg38_pos])
+            hg19_annotations = pd.read_sql_query(hg19_query, conn, params=[chrom, pos, variant_row['source_ref'], variant_row['source_alt']])
+            hg38_annotations = pd.read_sql_query(hg38_query, conn, params=[hg38_chrom, hg38_pos, variant_row['bcftools_hg38_ref'], variant_row['bcftools_hg38_alt']])
             
             # Apply comprehensive VEP analysis to this variant
             vep_analysis = self._analyze_single_variant(variant_row, hg19_annotations, hg38_annotations)
@@ -470,6 +479,27 @@ class VEPAnalyzer:
         # HGVSp analysis 
         hgvsp_analysis = self._analyze_hgvsp_concordance(hg19_transcripts_df, hg38_transcripts_df)
 
+        # MANE analysis 
+        hg38_mane_flag, hg38_mane_transcript_id, hg38_mane_details = self._analyze_mane_annotations(hg38_annotations)
+        # Check if MANE transcripts from hg38 are present in hg19
+        hg19_transcript_ids = set()
+        for _, row in hg19_transcripts_df.iterrows():
+            base_id = normalize_transcript_id(row['feature'])
+            if base_id:
+                hg19_transcript_ids.add(base_id)
+        
+        # Find which MANE transcripts are present in hg19
+        hg19_mane_present = []
+        if hg38_mane_transcript_id:
+            mane_base_id = normalize_transcript_id(hg38_mane_transcript_id)
+            if mane_base_id and mane_base_id in hg19_transcript_ids:
+                hg19_mane_present.append(hg38_mane_transcript_id)
+        
+        hg19_mane_transcript_id = hg19_mane_present[0] if hg19_mane_present else None
+        hg19_mane_details = "; ".join(hg19_mane_present) if hg19_mane_present else "Not_Present"
+
+
+
 
         # Add HGVSc results to the return dictionary
         vep_analysis.update({
@@ -480,6 +510,13 @@ class VEPAnalyzer:
             'hgvsc_canonical_match': hgvsc_analysis['canonical_hgvsc_match'],
             'hgvsc_match_summary': hgvsc_analysis['summary'],
             'hgvsc_high_impact_matches': hgvsc_analysis['high_impact_matches'],
+
+            # MANE information (hg38 source, hg19 presence check)
+            'hg38_mane_flag': hg38_mane_flag,
+            'hg38_mane_transcript_id': hg38_mane_transcript_id,
+            'hg38_mane_details': hg38_mane_details,
+            'hg19_mane_transcript_id': hg19_mane_transcript_id,
+            'hg19_mane_details': hg19_mane_details,
             
             # Representative HGVSc (canonical preferred)
             'hg19_hgvsc_canonical': hgvsc_analysis['hg19_canonical_hgvsc'],
@@ -487,18 +524,10 @@ class VEPAnalyzer:
             'hg19_hgvsp_canonical': hgvsc_analysis['hg19_canonical_hgvsp'],
             'hg38_hgvsp_canonical': hgvsc_analysis['hg38_canonical_hgvsp'],
             # HGVSp values
-            'matched_hgvsp_concordant': hgvsp_analysis['matched_hgvsp_concordant'],
-            'matched_hgvsp_discordant': hgvsp_analysis['matched_hgvsp_discordant'],
             'hgvsp_matched_transcript_count': hgvsp_analysis['matched_transcript_count'],
-            'canonical_hgvsp_concordant': hgvsp_analysis.get('canonical_hgvsp_concordant', ''),
-            'canonical_hgvsp_discordant': hgvsp_analysis.get('canonical_hgvsp_discordant', ''),
             'hg19_transcript_count': hgvsc_analysis['hg19_transcript_count'],
             'hg38_transcript_count': hgvsc_analysis['hg38_transcript_count'],
-            'matched_transcript_count': hgvsc_analysis['matched_transcript_count'],
-            'matched_hgvsc_concordant': hgvsc_analysis['matched_hgvsc_concordant'],
-            'matched_hgvsc_discordant': hgvsc_analysis['matched_hgvsc_discordant'],
-            'canonical_hgvsc_concordant': hgvsc_analysis.get('canonical_hgvsc_concordant', ''),
-            'canonical_hgvsc_discordant': hgvsc_analysis.get('canonical_hgvsc_discordant', '')
+            'matched_transcript_count': hgvsc_analysis['matched_transcript_count']
         })
   
         return vep_analysis
@@ -578,3 +607,50 @@ class VEPAnalyzer:
         hgvsp_results = analyze_transcript_hgvsp_matches(hg19_tx_data, hg38_tx_data)
         
         return hgvsp_results
+    
+    def _analyze_mane_annotations(self, annotations_df):
+        """
+        Analyze all MANE annotations for a variant and determine priority
+        
+        Args:
+            annotations_df: DataFrame with VEP annotations
+            
+        Returns:
+            tuple: (mane_flag, mane_transcript_id, mane_details)
+            - mane_flag: "MANE_Select" | "MANE_Plus_Clinical" | "Both" | "None"
+            - mane_transcript_id: RefSeq ID of highest priority MANE transcript (Select > Clinical)
+            - mane_details: String with all MANE transcripts found
+        """
+        if len(annotations_df) == 0:
+            return "None", None, ""
+        
+        mane_select_transcripts = []
+        mane_clinical_transcripts = []
+        all_mane_details = []
+        
+        for _, row in annotations_df.iterrows():
+            mane_field = row.get('mane', '')
+            refseq_id = row.get('refseq_transcript_id', '')
+            
+            if pd.notna(mane_field) and str(mane_field).strip():
+                mane_str = str(mane_field).strip()
+                
+                if "MANE_Select" in mane_str:
+                    mane_select_transcripts.append(refseq_id)
+                    all_mane_details.append(f"MANE_Select:{refseq_id}")
+                elif "MANE_Plus_Clinical" in mane_str:
+                    mane_clinical_transcripts.append(refseq_id)
+                    all_mane_details.append(f"MANE_Plus_Clinical:{refseq_id}")
+        
+        # Determine flag and primary transcript ID
+        has_select = bool(mane_select_transcripts)
+        has_clinical = bool(mane_clinical_transcripts)
+        
+        if has_select and has_clinical:
+            return "Both", mane_select_transcripts[0], "; ".join(all_mane_details)
+        elif has_select:
+            return "MANE_Select", mane_select_transcripts[0], "; ".join(all_mane_details)
+        elif has_clinical:
+            return "MANE_Plus_Clinical", mane_clinical_transcripts[0], "; ".join(all_mane_details)
+        else:
+            return "None", None, ""

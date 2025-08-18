@@ -223,6 +223,18 @@ def format_for_excel(df):
     output_df['Tx_Count_hg19'] = df['hg19_transcript_count'].fillna(0)
     output_df['Tx_Count_hg38'] = df['hg38_transcript_count'].fillna(0)
 
+    # MANE information
+    output_df['MANE_Flag_hg38'] = df['hg38_mane_flag'].fillna('None')
+    output_df['MANE_Transcript_ID_hg38'] = df['hg38_mane_transcript_id'].fillna('')
+    output_df['MANE_Details_hg38'] = df['hg38_mane_details'].fillna('')
+    output_df['MANE_Transcript_ID_hg19'] = df['hg19_mane_transcript_id'].fillna('')
+    output_df['MANE_Details_hg19'] = df['hg19_mane_details'].fillna('')
+
+    # Canonical transcript info (build-specific)
+    output_df['CANONICAL_transcript_hg19'] = df['hg19_canonical_transcript'].fillna('')
+    output_df['CANONICAL_transcript_hg38'] = df['hg38_canonical_transcript'].fillna('')
+    output_df['CANONICAL_HGVSc_Match'] = df['CANONICAL_HGVSc_Match'].fillna('NO')  
+
     # Matched transcript analysis
     output_df['HGVSc_MATCHED_transcripts'] = df['matched_transcript_count'].fillna(0)
     output_df['HGVSc_MATCHED_concordant'] = df['matched_hgvsc_concordant'].fillna('')
@@ -231,20 +243,10 @@ def format_for_excel(df):
     # HGVS canonical columns 
     output_df['HGVSp_CANONICAL_hg19'] = df['hg19_canonical_hgvsp'].fillna('')
     output_df['HGVSp_CANONICAL_hg38'] = df['hg38_canonical_hgvsp'].fillna('')
-    output_df['canonical_hgvsc_concordant'] = df['canonical_hgvsc_concordant'].fillna('')
-    output_df['canonical_hgvsc_discordant'] = df['canonical_hgvsc_discordant'].fillna('')
-    output_df['canonical_hgvsp_concordant'] = df['canonical_hgvsp_concordant'].fillna('')
-    output_df['canonical_hgvsp_discordant'] = df['canonical_hgvsp_discordant'].fillna('')
+  
     # HGSVp analysis
     output_df['CANONICAL_HGVSp_Match'] = df['CANONICAL_HGVSp_Match'].fillna('NO')
-    output_df['HGVSp_MATCHED_transcripts'] = df['HGVSp_MATCHED_transcripts'].fillna(0)
-    output_df['HGVSp_MATCHED_concordant'] = df['HGVSp_MATCHED_concordant'].fillna('')
-    output_df['HGVSp_MATCHED_discordant'] = df['HGVSp_MATCHED_discordant'].fillna('')
 
-    # Canonical transcript info (build-specific)
-    output_df['CANONICAL_transcript_hg19'] = df['hg19_canonical_transcript'].fillna('')
-    output_df['CANONICAL_transcript_hg38'] = df['hg38_canonical_transcript'].fillna('')
-    output_df['CANONICAL_HGVSc_Match'] = df['CANONICAL_HGVSc_Match'].fillna('NO')  
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Genotype_Issue'] = (df['gt_match'] == 0).map({True: 'YES', False: 'NO'})
@@ -309,27 +311,24 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'transcript_relationship': 'Transcript_Relationship',
         'hg19_transcript_count': 'Tx_Count_hg19',
         'hg38_transcript_count': 'Tx_Count_hg38',
+        # MANE information
+        'hg38_mane_flag': 'MANE_Flag_hg38',
+        'hg38_mane_transcript_id': 'MANE_Transcript_ID_hg38',
+        'hg38_mane_details': 'MANE_Details_hg38',
+        'hg19_mane_transcript_id': 'MANE_Transcript_ID_hg19',
+        'hg19_mane_details': 'MANE_Details_hg19',
         # Enhanced HGVSc columns
         'hg19_canonical_transcript': 'CANONICAL_transcript_hg19',
         'hg38_canonical_transcript': 'CANONICAL_transcript_hg38',
         'CANONICAL_HGVSc_Match': 'CANONICAL_HGVSc_Match',
         'hg19_canonical_hgvsc': 'HGVSc_CANONICAL_hg19',
         'hg38_canonical_hgvsc': 'HGVSc_CANONICAL_hg38',
-        'canonical_hgvsc_concordant': 'canonical_hgvsc_concordant',
-        'canonical_hgvsc_discordant': 'canonical_hgvsc_discordant',
         'hg19_hgvsp_canonical': 'HGVSp_CANONICAL_hg19', 
         'hg38_hgvsp_canonical': 'HGVSp_CANONICAL_hg38',
         # NEW HGVSp columns
         'CANONICAL_HGVSp_Match': 'CANONICAL_HGVSp_Match',
-        'HGVSp_MATCHED_transcripts': 'HGVSp_MATCHED_transcripts',
-        'canonical_hgvsp_concordant': 'canonical_hgvsp_concordant', 
-        'canonical_hgvsp_discordant': 'canonical_hgvsp_discordant',
-        'HGVSp_MATCHED_concordant': 'HGVSp_MATCHED_concordant',
-        'HGVSp_MATCHED_discordant': 'HGVSp_MATCHED_discordant',
         # Matched HGVSc analysis
         'matched_transcript_count': 'HGVSc_MATCHED_transcripts',
-        'matched_hgvsc_concordant': 'HGVSc_MATCHED_concordant',
-        'matched_hgvsc_discordant': 'HGVSc_MATCHED_discordant',
         # Matched transcript analysis
         'consequence_relationship': 'Consequence_Relationship',
         'consequence_change': 'Consequence_Change',

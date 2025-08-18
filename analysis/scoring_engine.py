@@ -299,18 +299,6 @@ class ClinicalScorer:
         else:
             result_df['HGVSc_MATCHED_discordant'] = ''
 
-        # Canonical HGVSc columns
-        if 'canonical_hgvsc_concordant' in result_df.columns:
-            result_df['canonical_hgvsc_concordant'] = result_df['canonical_hgvsc_concordant']
-        else:
-            result_df['canonical_hgvsc_concordant'] = ''
-
-        if 'canonical_hgvsc_discordant' in result_df.columns:
-            result_df['canonical_hgvsc_discordant'] = result_df['canonical_hgvsc_discordant']
-        else:
-            result_df['canonical_hgvsc_discordant'] = ''
-    
-
         # ADD HGVSp COLUMNS
         def analyze_hgvsp_canonical_match(row):
             """Analyze canonical HGVSp match using hgvs_utils"""
@@ -324,39 +312,6 @@ class ClinicalScorer:
             lambda row: 'YES' if analyze_hgvsp_canonical_match(row) else 'NO', 
             axis=1
             )   
-
-        # Add proper HGVSp matched transcripts columns
-        if 'matched_hgvsp_concordant' in result_df.columns:
-            result_df['HGVSp_MATCHED_concordant'] = result_df['matched_hgvsp_concordant']
-        else:
-            result_df['HGVSp_MATCHED_concordant'] = ''
-
-        if 'matched_hgvsp_discordant' in result_df.columns:
-            result_df['HGVSp_MATCHED_discordant'] = result_df['matched_hgvsp_discordant']
-        else:
-            result_df['HGVSp_MATCHED_discordant'] = ''
-        
-        # Canonical HGVSp columns  
-        if 'canonical_hgvsp_concordant' in result_df.columns:
-            result_df['canonical_hgvsp_concordant'] = result_df['canonical_hgvsp_concordant']
-        else:
-            result_df['canonical_hgvsp_concordant'] = ''
-
-        if 'canonical_hgvsp_discordant' in result_df.columns:
-            result_df['canonical_hgvsp_discordant'] = result_df['canonical_hgvsp_discordant']
-        else:
-            result_df['canonical_hgvsp_discordant'] = ''
-
-        # Calculate HGVSp transcript count (count of transcripts with HGVSp analysis)
-        def count_hgvsp_transcripts(row):
-            concordant = row.get('matched_hgvsp_concordant', '')
-            discordant = row.get('matched_hgvsp_discordant', '')
-            
-            concordant_count = len(concordant.split(';')) if concordant and concordant.strip() else 0
-            discordant_count = len(discordant.split(';')) if discordant and discordant.strip() else 0
-            
-            return concordant_count + discordant_count
-
-        result_df['HGVSp_MATCHED_transcripts'] = result_df.apply(count_hgvsp_transcripts, axis=1)
+    
 
         return result_df
