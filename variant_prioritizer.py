@@ -150,16 +150,8 @@ def format_for_excel(df):
     
    # GT creation using direct data sources
     output_df['GT_hg19'] = df['source_alleles'].fillna('')
-
-    # For hg38, combine bcftools ref/alt
-    def create_hg38_gt(row):
-        ref = row.get('bcftools_hg38_ref', '')
-        alt = row.get('bcftools_hg38_alt', '')
-        if pd.notna(ref) and pd.notna(alt) and ref != '' and alt != '':
-            return f"{ref}/{alt}"
-        return ''
-
-    output_df['GT_hg38'] = df.apply(create_hg38_gt, axis=1)
+    output_df['GT_hg38'] = df['GT_hg38'].fillna('')  # Use the already created column
+    
     output_df['Mapping_Status'] = df['mapping_status']
     
     output_df['Position_hg38_CrossMap'] = safe_int_convert(df['liftover_hg38_pos'])
@@ -217,12 +209,6 @@ def format_for_excel(df):
     output_df['PolyPhen_hg38'] = df['hg38_polyphen'].fillna('')
     output_df['PolyPhen_Change'] = df['polyphen_change'].fillna('')
 
-    # HGVSc Analysis Columns
-    output_df['HGVSc_CANONICAL_hg19'] = df['hg19_canonical_hgvsc'].fillna('')
-    output_df['HGVSc_CANONICAL_hg38'] = df['hg38_canonical_hgvsc'].fillna('')
-    output_df['Tx_Count_hg19'] = df['hg19_transcript_count'].fillna(0)
-    output_df['Tx_Count_hg38'] = df['hg38_transcript_count'].fillna(0)
-
     # MANE information
     output_df['MANE_Flag_hg38'] = df['hg38_mane_flag'].fillna('None')
     output_df['MANE_Transcript_ID_hg38'] = df['hg38_mane_transcript_id'].fillna('')
@@ -233,20 +219,7 @@ def format_for_excel(df):
     # Canonical transcript info (build-specific)
     output_df['CANONICAL_transcript_hg19'] = df['hg19_canonical_transcript'].fillna('')
     output_df['CANONICAL_transcript_hg38'] = df['hg38_canonical_transcript'].fillna('')
-    output_df['CANONICAL_HGVSc_Match'] = df['CANONICAL_HGVSc_Match'].fillna('NO')  
-
-    # Matched transcript analysis
-    output_df['HGVSc_MATCHED_transcripts'] = df['matched_transcript_count'].fillna(0)
-    output_df['HGVSc_MATCHED_concordant'] = df['matched_hgvsc_concordant'].fillna('')
-    output_df['HGVSc_MATCHED_discordant'] = df['matched_hgvsc_discordant'].fillna('')
-
-    # HGVS canonical columns 
-    output_df['HGVSp_CANONICAL_hg19'] = df['hg19_canonical_hgvsp'].fillna('')
-    output_df['HGVSp_CANONICAL_hg38'] = df['hg38_canonical_hgvsp'].fillna('')
   
-    # HGSVp analysis
-    output_df['CANONICAL_HGVSp_Match'] = df['CANONICAL_HGVSp_Match'].fillna('NO')
-
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Genotype_Issue'] = (df['gt_match'] == 0).map({True: 'YES', False: 'NO'})
@@ -285,6 +258,19 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
     
     # Add rank column
     output_df['Rank'] = range(1, len(output_df) + 1)
+
+    # GT creation using direct data sources
+    output_df['GT_hg19'] = df['source_alleles'].fillna('')
+
+    # For hg38, combine bcftools ref/alt
+    def create_hg38_gt(row):
+        ref = row.get('bcftools_hg38_ref', '')
+        alt = row.get('bcftools_hg38_alt', '')
+        if pd.notna(ref) and pd.notna(alt) and ref != '' and alt != '':
+            return f"{ref}/{alt}"
+        return ''
+
+    output_df['GT_hg38'] = df.apply(create_hg38_gt, axis=1)
     
     # Clinical evidence-focused column selection and renaming
     column_mapping = {
@@ -320,15 +306,6 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         # Enhanced HGVSc columns
         'hg19_canonical_transcript': 'CANONICAL_transcript_hg19',
         'hg38_canonical_transcript': 'CANONICAL_transcript_hg38',
-        'CANONICAL_HGVSc_Match': 'CANONICAL_HGVSc_Match',
-        'hg19_canonical_hgvsc': 'HGVSc_CANONICAL_hg19',
-        'hg38_canonical_hgvsc': 'HGVSc_CANONICAL_hg38',
-        'hg19_hgvsp_canonical': 'HGVSp_CANONICAL_hg19', 
-        'hg38_hgvsp_canonical': 'HGVSp_CANONICAL_hg38',
-        # NEW HGVSp columns
-        'CANONICAL_HGVSp_Match': 'CANONICAL_HGVSp_Match',
-        # Matched HGVSc analysis
-        'matched_transcript_count': 'HGVSc_MATCHED_transcripts',
         # Matched transcript analysis
         'consequence_relationship': 'Consequence_Relationship',
         'consequence_change': 'Consequence_Change',

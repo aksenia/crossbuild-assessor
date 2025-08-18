@@ -123,131 +123,62 @@ class PrioritizationPlotter:
 
 
     def _plot_canonical_hgvsc_match(self, df, ax):
-        """Plot 2: CANONICAL HGVS Match (HGVSc + HGVSp combinations) vs Clinical Changes"""
-        print("2. Creating CANONICAL HGVS Match vs Clinical Changes...")
+        """Plot 2: Placeholder - MANE-based HGVS Analysis (To be implemented in Phase 2)"""
+        print("2. Creating placeholder for MANE-based HGVS Analysis...")
         
-        if len(df) > 0 and 'CANONICAL_HGVSc_Match' in df.columns and 'Clinical_Change_Direction' in df.columns:
-            # Create 4-category HGVS combination classification
-            def categorize_hgvs_match(row):
-                hgvsc_match = row.get('CANONICAL_HGVSc_Match', 'NO')
-                hgvsp_match = row.get('CANONICAL_HGVSp_Match', 'NO')
-                
-                if hgvsc_match == 'YES' and hgvsp_match == 'YES':
-                    return 'HGVSc Match + HGVSp Match'
-                elif hgvsc_match == 'YES' and hgvsp_match == 'NO':
-                    return 'HGVSc Match + HGVSp Mismatch'
-                elif hgvsc_match == 'NO' and hgvsp_match == 'YES':
-                    return 'HGVSc Mismatch + HGVSp Match'
-                else:  # Both NO
-                    return 'HGVSc Mismatch + HGVSp Mismatch'
+        if len(df) > 0 and 'Clinical_Change_Direction' in df.columns:
+            # Create simple clinical change distribution as placeholder
+            clinical_counts = df['Clinical_Change_Direction'].value_counts()
             
-            # Apply categorization
-            df_plot = df.copy()
-            df_plot['HGVS_Category'] = df_plot.apply(categorize_hgvs_match, axis=1)
-            
-            # Create contingency table
-            match_clinical_crosstab = pd.crosstab(
-                df_plot['HGVS_Category'], 
-                df_plot['Clinical_Change_Direction']
-            )
-
             # Group all stable categories together
-            stable_columns = [col for col in match_clinical_crosstab.columns if col.startswith('Stable')]
-            if stable_columns:
-                # Sum all stable categories into one 'Stable' column
-                match_clinical_crosstab['Stable'] = match_clinical_crosstab[stable_columns].sum(axis=1)
-                # Drop individual stable columns
-                match_clinical_crosstab = match_clinical_crosstab.drop(columns=stable_columns)
-
-            # Order categories: Stable first, then transitions
-            category_order = ['Stable'] + [
-                '→ PATHOGENIC', 'FROM PATHOGENIC →',
-                '→ BENIGN', 'FROM BENIGN →',
-                'Other Transitions'
-            ]
-
-            # Reorder columns to match category order
-            ordered_columns = [cat for cat in category_order if cat in match_clinical_crosstab.columns]
-            match_clinical_crosstab = match_clinical_crosstab.reindex(columns=ordered_columns, fill_value=0)
+            stable_count = sum(count for cat, count in clinical_counts.items() if str(cat).startswith('STABLE_'))
             
-            # Define x-axis order for HGVS combination categories
-            hgvs_category_order = [
-                'HGVSc Match + HGVSp Match',
-                'HGVSc Match + HGVSp Mismatch', 
-                'HGVSc Mismatch + HGVSp Match',
-                'HGVSc Mismatch + HGVSp Mismatch'
-            ]
-            match_clinical_crosstab = match_clinical_crosstab.reindex(index=hgvs_category_order, fill_value=0)
+            # Create simplified data for placeholder
+            plot_data = {'MANE Analysis (Pending)': stable_count}
             
-            if len(ordered_columns) > 0:
-                # Color coding using visualization config
-                colors = []
-                clinical_colors = self.plot_colors.get('clinical_transitions', {})
-
-                for cat in ordered_columns:
-                    if cat.startswith('Stable'):
-                        if 'NONE' in cat:
-                            colors.append(clinical_colors.get('stable_none', '#7f7f7f'))
-                        else:
-                            colors.append(clinical_colors.get('stable', '#1f77b4'))
-                    elif cat == '→ PATHOGENIC':
-                        colors.append(clinical_colors.get('to_pathogenic', '#d62728'))
-                    elif cat == 'FROM PATHOGENIC →':
-                        colors.append(clinical_colors.get('from_pathogenic', '#ff7f0e'))
-                    elif cat == '→ BENIGN':
-                        colors.append(clinical_colors.get('to_benign', '#2ca02c'))
-                    elif cat == 'FROM BENIGN →':
-                        colors.append(clinical_colors.get('from_benign', '#17becf'))
-                    else:
-                        colors.append(clinical_colors.get('other', '#9467bd'))
-                
-                # Create stacked bar plot
-                match_clinical_crosstab.plot(
-                    kind='bar',
-                    ax=ax,
-                    color=colors,
-                    stacked=True,
-                    width=0.7
-                )
-                
-                ax.set_xlabel('Canonical Transcript HGVS Analysis', fontweight='bold')
-                ax.set_ylabel('Variant Count', fontweight='bold')
-                ax.set_title('Canonical Transcript HGVS Analysis vs Clinical Changes', 
-                            fontsize=12, fontweight='bold')
-                ax.set_xticklabels(['Both Match', 'HGVSc Match\nHGVSp Mismatch', 'HGVSc Mismatch\nHGVSp Match', 'Both Mismatch'], 
-                                rotation=45, ha='right')
-                ax.legend(title='Clinical Change Direction', bbox_to_anchor=(1.05, 1), loc='upper left')
-                ax.grid(True, alpha=0.3, axis='y')
-                
-                # Add percentage labels on bars (same logic as original)
-                for container in ax.containers:
-                    labels = []
-                    for i, bar in enumerate(container):
-                        height = bar.get_height()
-                        if height > 0:
-                            # Get the total for this x-category
-                            category_name = hgvs_category_order[i] if i < len(hgvs_category_order) else 'Unknown'
-                            total = match_clinical_crosstab.loc[category_name].sum() if category_name in match_clinical_crosstab.index else 1
-                            
-                            percentage = height / total * 100 if total > 0 else 0
-                            if percentage >= 5:  # Only show percentages >= 5% to avoid clutter
-                                labels.append(f'{percentage:.0f}%')
-                            else:
-                                labels.append('')
-                        else:
-                            labels.append('')
-                    
-                    ax.bar_label(container, labels, label_type='center', fontweight='bold', 
-                                color='white', fontsize=8)
-            else:
-                ax.text(0.5, 0.5, 'No clinical change\ndata available', ha='center', va='center',
-                        fontsize=12, transform=ax.transAxes)
-                ax.set_title('Canonical Transcript HGVS Analysis vs Clinical Changes', 
-                            fontsize=12, fontweight='bold')
+            # Add other categories
+            other_categories = {cat: count for cat, count in clinical_counts.items() 
+                              if not str(cat).startswith('STABLE_')}
+            if other_categories:
+                plot_data.update(other_categories)
+            
+            # Use same color scheme as original
+            colors = []
+            clinical_colors = self.plot_colors.get('clinical_transitions', {})
+            
+            for cat in plot_data.keys():
+                if cat == 'MANE Analysis (Pending)':
+                    colors.append(clinical_colors.get('stable', '#1f77b4'))
+                elif '→ PATHOGENIC' in str(cat):
+                    colors.append(clinical_colors.get('to_pathogenic', '#d62728'))
+                elif 'FROM PATHOGENIC →' in str(cat):
+                    colors.append(clinical_colors.get('from_pathogenic', '#ff7f0e'))
+                elif '→ BENIGN' in str(cat):
+                    colors.append(clinical_colors.get('to_benign', '#2ca02c'))
+                elif 'FROM BENIGN →' in str(cat):
+                    colors.append(clinical_colors.get('from_benign', '#17becf'))
+                else:
+                    colors.append(clinical_colors.get('other', '#9467bd'))
+            
+            # Create simple bar plot
+            ax.bar([0], [sum(plot_data.values())], color=colors[0], width=0.7)
+            
+            ax.set_xlabel('MANE-Based HGVS Analysis', fontweight='bold')
+            ax.set_ylabel('Variant Count', fontweight='bold')
+            ax.set_title('MANE-Based HGVS Analysis vs Clinical Changes (Placeholder)', 
+                        fontsize=12, fontweight='bold')
+            ax.set_xticks([0])
+            ax.set_xticklabels(['Pending MANE\nImplementation'], rotation=0, ha='center')
+            ax.grid(True, alpha=0.3, axis='y')
+            
+            # Add count label on single bar
+            total_count = sum(plot_data.values())
+            ax.text(0, total_count + total_count*0.01, f'{int(total_count)}', 
+                   ha='center', va='bottom', fontweight='bold')
         else:
-            ax.text(0.5, 0.5, 'Required columns not\navailable in data', ha='center', va='center',
+            ax.text(0.5, 0.5, 'Placeholder for\nMANE-based HGVS Analysis', ha='center', va='center',
                     fontsize=12, transform=ax.transAxes)
-            ax.set_title('Canonical Transcript HGVS Analysis vs Clinical Changes', 
+            ax.set_title('MANE-Based HGVS Analysis vs Clinical Changes (Placeholder)', 
                         fontsize=12, fontweight='bold')
         
     def _plot_impact_transitions_grouped(self, df, ax):

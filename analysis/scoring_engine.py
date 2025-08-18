@@ -256,12 +256,6 @@ class ClinicalScorer:
         # Create the initial dataframe
         result_df = pd.DataFrame(scored_variants)
 
-        # Add CANONICAL_HGVSc_Match column for plotting
-        result_df['CANONICAL_HGVSc_Match'] = result_df['hgvsc_canonical_match'].map({
-            True: 'YES', 
-            False: 'NO'
-        }).fillna('NO')
-
         # Add Clinical_Change_Direction column using same categorization as Plot 3
         def categorize_clin_sig_transition_for_plotting(row):
             """Reuse the same categorization logic as Plot 3"""
@@ -282,36 +276,6 @@ class ClinicalScorer:
                 return 'Other Transitions'
 
         result_df['Clinical_Change_Direction'] = result_df.apply(categorize_clin_sig_transition_for_plotting, axis=1)
-
-        # ADD HGVS COLUMNS:
-        if 'matched_transcript_count' in result_df.columns:
-            result_df['HGVSc_MATCHED_transcripts'] = result_df['matched_transcript_count']
-        else:
-            result_df['HGVSc_MATCHED_transcripts'] = 0
-
-        if 'matched_hgvsc_concordant' in result_df.columns:
-            result_df['HGVSc_MATCHED_concordant'] = result_df['matched_hgvsc_concordant']
-        else:
-            result_df['HGVSc_MATCHED_concordant'] = ''
-
-        if 'matched_hgvsc_discordant' in result_df.columns:
-            result_df['HGVSc_MATCHED_discordant'] = result_df['matched_hgvsc_discordant']
-        else:
-            result_df['HGVSc_MATCHED_discordant'] = ''
-
-        # ADD HGVSp COLUMNS
-        def analyze_hgvsp_canonical_match(row):
-            """Analyze canonical HGVSp match using hgvs_utils"""
-            hg19_hgvsp = row.get('hg19_hgvsp_canonical', '')
-            hg38_hgvsp = row.get('hg38_hgvsp_canonical', '')
-            
-            return compare_canonical_hgvsp(hg19_hgvsp, hg38_hgvsp)
-
-        # Add HGVSp canonical match columns
-        result_df['CANONICAL_HGVSp_Match'] = result_df.apply(
-            lambda row: 'YES' if analyze_hgvsp_canonical_match(row) else 'NO', 
-            axis=1
-            )   
     
 
         return result_df

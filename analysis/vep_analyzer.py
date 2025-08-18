@@ -474,11 +474,6 @@ class VEPAnalyzer:
             'hg38_is_benign': hg38_is_benign
         }
 
-        # HGVSc analysis
-        hgvsc_analysis = self._analyze_hgvsc_concordance(hg19_transcripts_df, hg38_transcripts_df)
-        # HGVSp analysis 
-        hgvsp_analysis = self._analyze_hgvsp_concordance(hg19_transcripts_df, hg38_transcripts_df)
-
         # MANE analysis 
         hg38_mane_flag, hg38_mane_transcript_id, hg38_mane_details = self._analyze_mane_annotations(hg38_annotations)
         # Check if MANE transcripts from hg38 are present in hg19
@@ -496,38 +491,35 @@ class VEPAnalyzer:
                 hg19_mane_present.append(hg38_mane_transcript_id)
         
         hg19_mane_transcript_id = hg19_mane_present[0] if hg19_mane_present else None
-        hg19_mane_details = "; ".join(hg19_mane_present) if hg19_mane_present else "Not_Present"
 
-
+        # Format hg19 MANE details to match hg38 format
+        if hg19_mane_present:
+            # Use the same MANE type as hg38 for consistency
+            if hg38_mane_flag == "MANE_Select":
+                hg19_mane_details = f"MANE_Select:{hg19_mane_present[0]}"
+            elif hg38_mane_flag == "MANE_Plus_Clinical":
+                hg19_mane_details = f"MANE_Plus_Clinical:{hg19_mane_present[0]}"
+            else:
+                hg19_mane_details = hg19_mane_present[0]
+        else:
+            hg19_mane_details = "Not_Present"
+        
+        # Canonical transcript identification 
+        hg19_canonical_transcript, hg38_canonical_transcript = self._identify_canonical_transcripts(hg19_transcripts_df, hg38_transcripts_df)
 
 
         # Add HGVSc results to the return dictionary
         vep_analysis.update({
-            'hgvsc_perfect_matches': len(hgvsc_analysis['perfect_matches']),
-            'hgvsc_mismatches': len(hgvsc_analysis['mismatches']), 
-            'hg19_canonical_transcript': hgvsc_analysis.get('hg19_canonical_transcript', ''),
-            'hg38_canonical_transcript': hgvsc_analysis.get('hg38_canonical_transcript', ''),
-            'hgvsc_canonical_match': hgvsc_analysis['canonical_hgvsc_match'],
-            'hgvsc_match_summary': hgvsc_analysis['summary'],
-            'hgvsc_high_impact_matches': hgvsc_analysis['high_impact_matches'],
-
+             # Basic canonical transcript identification
+            'hg19_canonical_transcript': hg19_canonical_transcript,
+            'hg38_canonical_transcript': hg38_canonical_transcript,
+        
             # MANE information (hg38 source, hg19 presence check)
             'hg38_mane_flag': hg38_mane_flag,
             'hg38_mane_transcript_id': hg38_mane_transcript_id,
             'hg38_mane_details': hg38_mane_details,
             'hg19_mane_transcript_id': hg19_mane_transcript_id,
             'hg19_mane_details': hg19_mane_details,
-            
-            # Representative HGVSc (canonical preferred)
-            'hg19_hgvsc_canonical': hgvsc_analysis['hg19_canonical_hgvsc'],
-            'hg38_hgvsc_canonical': hgvsc_analysis['hg38_canonical_hgvsc'],
-            'hg19_hgvsp_canonical': hgvsc_analysis['hg19_canonical_hgvsp'],
-            'hg38_hgvsp_canonical': hgvsc_analysis['hg38_canonical_hgvsp'],
-            # HGVSp values
-            'hgvsp_matched_transcript_count': hgvsp_analysis['matched_transcript_count'],
-            'hg19_transcript_count': hgvsc_analysis['hg19_transcript_count'],
-            'hg38_transcript_count': hgvsc_analysis['hg38_transcript_count'],
-            'matched_transcript_count': hgvsc_analysis['matched_transcript_count']
         })
   
         return vep_analysis
@@ -635,10 +627,10 @@ class VEPAnalyzer:
             if pd.notna(mane_field) and str(mane_field).strip():
                 mane_str = str(mane_field).strip()
                 
-                if "MANE_Select" in mane_str:
-                    mane_select_transcripts.append(refseq_id)
-                    all_mane_details.append(f"MANE_Select:{refseq_id}")
-                elif "MANE_Plus_Clinical" in mane_str:
+                if "MANE_Select" in mane_str and refseq_id:
+                        mane_select_transcripts.append(refseq_id)
+                        all_mane_details.append(f"MANE_Select:{refseq_id}")
+                elif "MANE_Plus_Clinical" in mane_str and refseq_id:
                     mane_clinical_transcripts.append(refseq_id)
                     all_mane_details.append(f"MANE_Plus_Clinical:{refseq_id}")
         
@@ -654,3 +646,28 @@ class VEPAnalyzer:
             return "MANE_Plus_Clinical", mane_clinical_transcripts[0], "; ".join(all_mane_details)
         else:
             return "None", None, ""
+        
+    def _identify_canonical_transcripts(self, hg19_transcripts_df, hg38_transcripts_df):
+        """
+        Identify canonical transcripts for hg19 and hg38 builds
+        
+        Args:
+            hg19_transcripts_df: hg19 transcript annotations
+            hg38_transcripts_df: hg38 transcript annotations
+            
+        Returns:
+            tuple: (hg19_canonical_transcript, hg38_canonical_transcript)
+        """
+        # Find canonical transcript for hg19
+        hg19_canonical = ""
+        canonical_hg19_rows = hg19_transcripts_df[hg19_transcripts_df['is_canonical'] == 1]
+        if len(canonical_hg19_rows) > 0:
+            hg19_canonical = canonical_hg19_rows.iloc[0]['feature']
+        
+        # Find canonical transcript for hg38
+        hg38_canonical = ""
+        canonical_hg38_rows = hg38_transcripts_df[hg38_transcripts_df['is_canonical'] == 1]
+        if len(canonical_hg38_rows) > 0:
+            hg38_canonical = canonical_hg38_rows.iloc[0]['feature']
+        
+        return hg19_canonical, hg38_canonical
