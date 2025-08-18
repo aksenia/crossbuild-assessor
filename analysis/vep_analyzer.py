@@ -276,11 +276,6 @@ class VEPAnalyzer:
                 hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg19)
                 hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg38)
                 unmatched_consequences = 1 if (hg19_significant or hg38_significant) else 0
-
-            # Store consequence sets for CSV output (ENHANCED - now shows individual consequences)
-            all_hg19_consequences_stored = ', '.join(sorted(all_hg19_consequences)) if all_hg19_consequences else ''
-            all_hg38_consequences_stored = ', '.join(sorted(all_hg38_consequences)) if all_hg38_consequences else ''
-
             
             # Set other analysis variables for compatibility
             same_consequence_different_transcripts = 0  # Not used in new approach
