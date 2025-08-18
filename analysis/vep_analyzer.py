@@ -507,6 +507,11 @@ class VEPAnalyzer:
         # Canonical transcript identification 
         hg19_canonical_transcript, hg38_canonical_transcript = self._identify_canonical_transcripts(hg19_transcripts_df, hg38_transcripts_df)
 
+        # Priority transcript selection using MANE-first hierarchy
+        transcript_crossbuild_status, priority_transcript_crossbuild = self._select_priority_transcripts(
+            hg19_transcripts_df, hg38_transcripts_df, hg38_mane_flag, hg38_mane_transcript_id
+        )
+
 
         # Add HGVSc results to the return dictionary
         vep_analysis.update({
@@ -520,6 +525,9 @@ class VEPAnalyzer:
             'hg38_mane_details': hg38_mane_details,
             'hg19_mane_transcript_id': hg19_mane_transcript_id,
             'hg19_mane_details': hg19_mane_details,
+            # Priority transcript selection using MANE-first hierarchy
+            'transcript_crossbuild_status': transcript_crossbuild_status,
+            'priority_transcript_crossbuild': priority_transcript_crossbuild
         })
   
         return vep_analysis
@@ -671,3 +679,59 @@ class VEPAnalyzer:
             hg38_canonical = canonical_hg38_rows.iloc[0]['feature']
         
         return hg19_canonical, hg38_canonical
+    
+    def _select_priority_transcripts(self, hg19_transcripts_df, hg38_transcripts_df, hg38_mane_flag, hg38_mane_transcript_id):
+        """
+        Select priority transcripts using MANE-first hierarchy with exact version matching
+        
+        Priority order: MANE Select > MANE Plus Clinical > Canonical fallback
+        
+        Args:
+            hg19_transcripts_df: hg19 transcript annotations
+            hg38_transcripts_df: hg38 transcript annotations
+            hg38_mane_flag: MANE flag from hg38 ("MANE_Select", "MANE_Plus_Clinical", "Both", "None")
+            hg38_mane_transcript_id: RefSeq ID of MANE transcript from hg38
+            
+        Returns:
+            tuple: (transcript_crossbuild_status, priority_transcript_crossbuild)
+        """
+        # Build hg19 transcript set with exact versions
+        hg19_transcript_ids = set()
+        for _, row in hg19_transcripts_df.iterrows():
+            full_id = row['feature']
+            if full_id:
+                hg19_transcript_ids.add(full_id)
+        
+        # Case 1: MANE transcript available in hg38
+        if hg38_mane_flag in ["MANE_Select", "MANE_Plus_Clinical", "Both"] and hg38_mane_transcript_id:
+            if hg38_mane_transcript_id in hg19_transcript_ids:
+                # Exact match found - same transcript with same version
+                if hg38_mane_flag == "MANE_Select" or hg38_mane_flag == "Both":
+                    return "MANE_Select_Both_Builds", hg38_mane_transcript_id
+                else:
+                    return "MANE_Plus_Clinical_Both_Builds", hg38_mane_transcript_id
+            else:
+                return "MANE_hg38_Only", "NONE"
+        
+        # Case 2: No MANE - fallback to canonical with exact matching
+        hg19_canonical = None
+        hg38_canonical = None
+        
+        # Find canonical transcripts
+        for _, row in hg19_transcripts_df.iterrows():
+            if row.get('is_canonical', 0) == 1:
+                hg19_canonical = row['feature']
+                break
+                
+        for _, row in hg38_transcripts_df.iterrows():
+            if row.get('is_canonical', 0) == 1:
+                hg38_canonical = row['feature']
+                break
+        
+        # Check if canonical transcripts match exactly
+        if hg19_canonical and hg38_canonical and hg19_canonical == hg38_canonical:
+            return "Canonical_Fallback_Both_Builds", hg19_canonical
+        elif hg19_canonical or hg38_canonical:
+            return "No_Matching_Transcripts", "NONE"
+        else:
+            return "No_Transcripts", "NONE"

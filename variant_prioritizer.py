@@ -151,7 +151,7 @@ def format_for_excel(df):
    # GT creation using direct data sources
     output_df['GT_hg19'] = df['source_alleles'].fillna('')
     output_df['GT_hg38'] = df['GT_hg38'].fillna('')  # Use the already created column
-    
+
     output_df['Mapping_Status'] = df['mapping_status']
     
     output_df['Position_hg38_CrossMap'] = safe_int_convert(df['liftover_hg38_pos'])
@@ -219,6 +219,10 @@ def format_for_excel(df):
     # Canonical transcript info (build-specific)
     output_df['CANONICAL_transcript_hg19'] = df['hg19_canonical_transcript'].fillna('')
     output_df['CANONICAL_transcript_hg38'] = df['hg38_canonical_transcript'].fillna('')
+
+    # Priority transcript selection
+    output_df['Transcript_CrossBuild_Status'] = df['transcript_crossbuild_status'].fillna('No_Transcripts')
+    output_df['Priority_Transcript_CrossBuild'] = df['priority_transcript_crossbuild'].fillna('NONE')
   
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
@@ -303,9 +307,12 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg38_mane_details': 'MANE_Details_hg38',
         'hg19_mane_transcript_id': 'MANE_Transcript_ID_hg19',
         'hg19_mane_details': 'MANE_Details_hg19',
-        # Enhanced HGVSc columns
+        # Canonical transcripts
         'hg19_canonical_transcript': 'CANONICAL_transcript_hg19',
         'hg38_canonical_transcript': 'CANONICAL_transcript_hg38',
+        # Priority transcript selection
+        'transcript_crossbuild_status': 'Transcript_CrossBuild_Status',
+        'priority_transcript_crossbuild': 'Priority_Transcript_CrossBuild',
         # Matched transcript analysis
         'consequence_relationship': 'Consequence_Relationship',
         'consequence_change': 'Consequence_Change',
