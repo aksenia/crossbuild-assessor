@@ -232,6 +232,10 @@ def format_for_excel(df):
     output_df['PolyPhen_hg38'] = df['hg38_polyphen'].fillna('')
     output_df['PolyPhen_Change'] = df['polyphen_change'].fillna('')
 
+    # Transcript counts
+    output_df['Tx_Count_hg19'] = df['hg19_transcript_count'].fillna(0)
+    output_df['Tx_Count_hg38'] = df['hg38_transcript_count'].fillna(0)
+
     # MANE information
     output_df['MANE_Flag_hg38'] = df['hg38_mane_flag'].fillna('None')
     output_df['MANE_Transcript_ID_hg38'] = df['hg38_mane_transcript_id'].fillna('')

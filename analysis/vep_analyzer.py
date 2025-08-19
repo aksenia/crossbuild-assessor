@@ -148,6 +148,10 @@ class VEPAnalyzer:
         # Focus on transcript annotations only for transcript analysis
         hg19_transcripts_df = hg19_annotations[hg19_annotations['feature_type'] == 'Transcript']
         hg38_transcripts_df = hg38_annotations[hg38_annotations['feature_type'] == 'Transcript']
+
+        # Count transcripts per variant (always calculated)
+        hg19_transcript_count = len(hg19_transcripts_df)
+        hg38_transcript_count = len(hg38_transcripts_df)
         
         if len(hg19_transcripts_df) > 0 or len(hg38_transcripts_df) > 0:
             # CLEAN SET-BASED ANALYSIS: Analyze all transcripts and consequences as sets
@@ -172,6 +176,8 @@ class VEPAnalyzer:
                     'symbol': row['symbol'],
                     'feature_id': row['feature']
                 }
+
+            
             
            # Step 3: Consequence relationship analysis
             consequence_relationship, consequence_change = analyze_consequence_relationships(hg19_transcripts, hg38_transcripts)
@@ -305,6 +311,10 @@ class VEPAnalyzer:
             # Representative VEP information (FIXED)
             'hg19_gene': hg19_gene,
             'hg38_gene': hg38_gene,
+            
+            # Transcript counts
+            'hg19_transcript_count': hg19_transcript_count,
+            'hg38_transcript_count': hg38_transcript_count,
  
             'hg19_impact': hg19_impact,
             'hg38_impact': hg38_impact,
