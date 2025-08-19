@@ -6,8 +6,14 @@ transcript-level discordances between genome builds.
 """
 
 import pandas as pd
-from utils.transcript_utils import extract_genotype_from_alleles
-#from utils.data_utils import clean_string
+from utils.transcript_utils import (
+    extract_genotype_from_alleles,
+    analyze_consequence_relationships, 
+    analyze_worst_consequence_transcripts,
+    get_priority_transcript_data
+)
+
+from utils.data_utils import clean_string
 from utils.clinical_utils import (
     is_pathogenic_clinical_significance,
     is_benign_clinical_significance, 
@@ -17,7 +23,6 @@ from utils.clinical_utils import (
 )
 from config.constants import VEP_CONSEQUENCE_IMPACT
 from utils.hgvs_utils import analyze_priority_transcript_hgvs
-from utils.transcript_utils import analyze_consequence_relationships
 
 class VEPAnalyzer:
     """Analyzes VEP annotations to identify discordances between genome builds"""
@@ -139,24 +144,22 @@ class VEPAnalyzer:
     def _analyze_single_variant(self, variant_row, hg19_annotations, hg38_annotations): 
         """Apply comprehensive VEP analysis to a single variant (cached part) - CLEAN SET-BASED APPROACH"""
         from utils.data_utils import clean_string
+        from utils.transcript_utils import analyze_consequence_relationships, analyze_worst_consequence_transcripts
+        from utils.hgvs_utils import analyze_priority_transcript_hgvs
+        
+        # ===== BASIC VARIANT INFO EXTRACTION =====
         chrom = variant_row['source_chrom']
         pos = variant_row['source_pos']
-        
-        # Extract genotypes
         ref_allele, alt_allele = extract_genotype_from_alleles(variant_row['source_alleles'])
         
-        # Focus on transcript annotations only for transcript analysis
+        # ===== TRANSCRIPT ANALYSIS SECTION (MUST BE FIRST) =====
+        # Transcript filtering and counting
         hg19_transcripts_df = hg19_annotations[hg19_annotations['feature_type'] == 'Transcript']
         hg38_transcripts_df = hg38_annotations[hg38_annotations['feature_type'] == 'Transcript']
-
-        # Count transcripts per variant (always calculated)
         hg19_transcript_count = len(hg19_transcripts_df)
         hg38_transcript_count = len(hg38_transcripts_df)
         
         if len(hg19_transcripts_df) > 0 or len(hg38_transcripts_df) > 0:
-            # CLEAN SET-BASED ANALYSIS: Analyze all transcripts and consequences as sets
-            from utils.data_utils import clean_string
-            
             # Organize transcript data by build
             hg19_transcripts = {}
             hg38_transcripts = {}
@@ -176,101 +179,127 @@ class VEPAnalyzer:
                     'symbol': row['symbol'],
                     'feature_id': row['feature']
                 }
-
             
-            
-           # Step 3: Consequence relationship analysis
+            # Consequence relationship analysis
             consequence_relationship, consequence_change = analyze_consequence_relationships(hg19_transcripts, hg38_transcripts)
             
-            # Set other analysis variables for compatibility
-            gene_changes = 0  # Will be calculated later
-            impact_changes = 0  # Will be calculated later
-        
-        else:
-            # No transcript data available
-            gene_changes = 0
-            impact_changes = 0
-            consequence_relationship = 'no_consequences: no transcript data'
-        
-        # Get representative VEP information with proper fallbacks
-        # Priority: transcript data > any annotation data > empty string
-        def get_best_gene(transcripts_df, annotations_df):
-            """Get the best available gene symbol with proper fallback"""
-            # First try transcript data
-            if len(transcripts_df) > 0:
-                gene_from_transcript = transcripts_df['symbol'].iloc[0]
-                if pd.notna(gene_from_transcript) and gene_from_transcript != '' and gene_from_transcript != '-':
-                    return gene_from_transcript
+            # MANE analysis
+            hg38_mane_flag, hg38_mane_transcript_id, hg38_mane_details = self._analyze_mane_annotations(hg38_annotations)
             
-            # Fallback to any annotation data
-            if len(annotations_df) > 0:
-                gene_from_annotation = annotations_df['symbol'].iloc[0]
-                if pd.notna(gene_from_annotation) and gene_from_annotation != '' and gene_from_annotation != '-':
-                    return gene_from_annotation
+            # Check if MANE transcripts from hg38 are present in hg19
+            hg19_transcript_ids = {row['feature'] for _, row in hg19_transcripts_df.iterrows() if row['feature']}
+            hg19_mane_present = [hg38_mane_transcript_id] if hg38_mane_transcript_id and hg38_mane_transcript_id in hg19_transcript_ids else []
+            hg19_mane_transcript_id = hg19_mane_present[0] if hg19_mane_present else None
             
-            # Final fallback
-            return ''
-                
-        def get_best_impact(annotations_df):
-            """Get the best available impact"""
-            if len(annotations_df) > 0:
-                impact = annotations_df['impact'].iloc[0]
-                if pd.notna(impact) and impact != '' and impact != '-':
-                    return impact
-            return ''
-        
-        # Apply the improved extraction
-        hg19_gene = get_best_gene(hg19_transcripts_df, hg19_annotations)
-        hg38_gene = get_best_gene(hg38_transcripts_df, hg38_annotations)
-        hg19_impact = get_best_impact(hg19_annotations)
-        hg38_impact = get_best_impact(hg38_annotations)
-        
-        # Calculate gene and impact changes using clean_string
-        if clean_string(hg19_gene) != clean_string(hg38_gene):
-            gene_changes = 1
-        
-        if clean_string(hg19_impact) != clean_string(hg38_impact):
-            impact_changes = 1
-        
-        # Clinical significance and pathogenicity predictions
-        def get_best_clinical_data(annotations_df, column):
-            """Get clinical data with proper handling of missing values"""
-            if len(annotations_df) > 0:
-                value = annotations_df[column].iloc[0]
-                if pd.notna(value) and value != '' and value != '-':
-                    return value
-            return ''
-        
-        hg19_clin_sig = get_best_clinical_data(hg19_annotations, 'clin_sig')
-        hg38_clin_sig = get_best_clinical_data(hg38_annotations, 'clin_sig')
-        
-        # Normalize clinical significance
-        hg19_clin_sig_normalized = normalize_clinical_significance(hg19_clin_sig)
-        hg38_clin_sig_normalized = normalize_clinical_significance(hg38_clin_sig)
-        hg19_sift = get_best_clinical_data(hg19_annotations, 'sift')
-        hg38_sift = get_best_clinical_data(hg38_annotations, 'sift')
-        hg19_polyphen = get_best_clinical_data(hg19_annotations, 'polyphen')
-        hg38_polyphen = get_best_clinical_data(hg38_annotations, 'polyphen')
-        
-        # Parse pathogenicity predictions
-        hg19_sift_pred, hg19_sift_score = parse_sift_prediction(hg19_sift)
-        hg38_sift_pred, hg38_sift_score = parse_sift_prediction(hg38_sift)
-        hg19_polyphen_pred, hg19_polyphen_score = parse_polyphen_prediction(hg19_polyphen)
-        hg38_polyphen_pred, hg38_polyphen_score = parse_polyphen_prediction(hg38_polyphen)
-        
-        # Check for clinical significance changes (using normalized categories)
-        hg19_is_pathogenic = (hg19_clin_sig_normalized == 'PATHOGENIC')
-        hg38_is_pathogenic = (hg38_clin_sig_normalized == 'PATHOGENIC')
-        hg19_is_benign = (hg19_clin_sig_normalized == 'BENIGN')
-        hg38_is_benign = (hg38_clin_sig_normalized == 'BENIGN')
-        
-        # Create directional clinical significance change
-        if hg19_clin_sig_normalized != hg38_clin_sig_normalized:
-            clin_sig_change = f'{hg19_clin_sig_normalized}_TO_{hg38_clin_sig_normalized}'
+            # Format hg19 MANE details
+            if hg19_mane_present:
+                if hg38_mane_flag == "MANE_Select":
+                    hg19_mane_details = f"MANE_Select:{hg19_mane_present[0]}"
+                elif hg38_mane_flag == "MANE_Plus_Clinical":
+                    hg19_mane_details = f"MANE_Plus_Clinical:{hg19_mane_present[0]}"
+                else:
+                    hg19_mane_details = hg19_mane_present[0]
+            else:
+                hg19_mane_details = "Not_Present"
+            
+            # Canonical transcript identification 
+            hg19_canonical_transcript, hg38_canonical_transcript = self._identify_canonical_transcripts(hg19_transcripts_df, hg38_transcripts_df)
+            
+            # Priority transcript selection using MANE-first hierarchy
+            transcript_crossbuild_status, priority_transcript_crossbuild = self._select_priority_transcripts(
+                hg19_transcripts_df, hg38_transcripts_df, hg38_mane_flag, hg38_mane_transcript_id
+            )
+            
+            # HGVS analysis on priority transcript
+            priority_hgvs_analysis = analyze_priority_transcript_hgvs(
+                hg19_transcripts_df, hg38_transcripts_df, transcript_crossbuild_status, priority_transcript_crossbuild
+            )
+            
+            # Worst consequence transcript analysis
+            worst_consequence_analysis = analyze_worst_consequence_transcripts(
+                hg19_transcripts, hg38_transcripts, priority_transcript_crossbuild
+            )
+            
         else:
-            clin_sig_change = f'STABLE_{hg19_clin_sig_normalized}'
+            # No transcript data available - set defaults
+            consequence_relationship = 'no_consequences'
+            consequence_change = 'no_consequences: no transcript data'
+            hg38_mane_flag = ''
+            hg38_mane_transcript_id = ''
+            hg38_mane_details = ''
+            hg19_mane_transcript_id = ''
+            hg19_mane_details = ''
+            hg19_canonical_transcript = ''
+            hg38_canonical_transcript = ''
+            transcript_crossbuild_status = 'No_Transcripts'
+            priority_transcript_crossbuild = 'NONE'
+            
+            priority_hgvs_analysis = {
+                'priority_hgvsc_hg19': '',
+                'priority_hgvsc_hg38': '',
+                'priority_hgvsp_hg19': '',
+                'priority_hgvsp_hg38': '',
+                'priority_hgvsc_concordance': 'No_Analysis',
+                'priority_hgvsp_concordance': 'No_Analysis'
+            }
+            
+            worst_consequence_analysis = {
+                'hg19_worst_consequence': '',
+                'hg38_worst_consequence': '',
+                'hg19_worst_consequence_tx': '',
+                'hg38_worst_consequence_tx': '',
+                'hg19_worst_consequence_tx_is_priority': 'NO',
+                'hg38_worst_consequence_tx_is_priority': 'NO',
+                'has_worst_consequence_difference': 'NO'
+            }
         
-        # Check for SIFT/PolyPhen changes
+        # ===== REPRESENTATIVE VEP INFORMATION EXTRACTION =====
+        
+        # Extract representative data using priority transcript only
+        hg19_gene = get_priority_transcript_data(hg19_transcripts_df, priority_transcript_crossbuild, 'symbol')
+        hg38_gene = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'symbol')
+        hg19_impact = get_priority_transcript_data(hg19_transcripts_df, priority_transcript_crossbuild, 'impact')
+        hg38_impact = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'impact')
+        
+        # Change detection (only compare if both have data)
+        gene_changes = 1 if (hg19_gene and hg38_gene and clean_string(hg19_gene) != clean_string(hg38_gene)) else 0
+        impact_changes = 1 if (hg19_impact and hg38_impact and clean_string(hg19_impact) != clean_string(hg38_impact)) else 0
+
+        
+        # ===== CLINICAL SIGNIFICANCE ANALYSIS =====
+        hg19_clin_sig = get_priority_transcript_data(hg19_transcripts_df, priority_transcript_crossbuild, 'clin_sig')
+        hg38_clin_sig = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'clin_sig')
+        hg19_clin_sig_normalized = normalize_clinical_significance(hg19_clin_sig) if hg19_clin_sig != 'NONE' else 'NONE'
+        hg38_clin_sig_normalized = normalize_clinical_significance(hg38_clin_sig) if hg38_clin_sig != 'NONE' else 'NONE'
+        
+        # Create directional clinical significance change (only if both have data)
+        if hg19_clin_sig_normalized and hg38_clin_sig_normalized:
+            if hg19_clin_sig_normalized != hg38_clin_sig_normalized:
+                clin_sig_change = f'{hg19_clin_sig_normalized}_TO_{hg38_clin_sig_normalized}'
+            else:
+                clin_sig_change = f'STABLE_{hg19_clin_sig_normalized}'
+        else:
+            clin_sig_change = ''
+        
+        # Clinical significance flags
+        hg19_is_pathogenic = (hg19_clin_sig_normalized == 'PATHOGENIC') if hg19_clin_sig_normalized != 'NONE' else False
+        hg38_is_pathogenic = (hg38_clin_sig_normalized == 'PATHOGENIC') if hg38_clin_sig_normalized != 'NONE' else False
+        hg19_is_benign = (hg19_clin_sig_normalized == 'BENIGN') if hg19_clin_sig_normalized != 'NONE' else False
+        hg38_is_benign = (hg38_clin_sig_normalized == 'BENIGN') if hg38_clin_sig_normalized != 'NONE' else False
+        
+        # ===== PATHOGENICITY PREDICTIONS =====
+        hg19_sift = get_priority_transcript_data(hg19_transcripts_df, priority_transcript_crossbuild, 'sift')
+        hg38_sift = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'sift')
+        hg19_polyphen = get_priority_transcript_data(hg19_transcripts_df, priority_transcript_crossbuild, 'polyphen')
+        hg38_polyphen = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'polyphen')
+        
+        # Parse pathogenicity predictions (only if data exists)
+        hg19_sift_pred, hg19_sift_score = parse_sift_prediction(hg19_sift) if hg19_sift != 'NONE' else ('NONE', 'NONE')
+        hg38_sift_pred, hg38_sift_score = parse_sift_prediction(hg38_sift) if hg38_sift != 'NONE' else ('NONE', 'NONE')
+        hg19_polyphen_pred, hg19_polyphen_score = parse_polyphen_prediction(hg19_polyphen) if hg19_polyphen != 'NONE' else ('NONE', 'NONE')
+        hg38_polyphen_pred, hg38_polyphen_score = parse_polyphen_prediction(hg38_polyphen) if hg38_polyphen != 'NONE' else ('NONE', 'NONE')
+            
+        # Check for prediction changes (only if both have predictions)
         sift_change = ''
         if hg19_sift_pred and hg38_sift_pred and hg19_sift_pred != hg38_sift_pred:
             if (hg19_sift_pred == 'tolerated' and hg38_sift_pred == 'deleterious') or \
@@ -282,10 +311,10 @@ class VEPAnalyzer:
             if (hg19_polyphen_pred == 'benign' and hg38_polyphen_pred in ['possibly_damaging', 'probably_damaging']) or \
             (hg19_polyphen_pred in ['possibly_damaging', 'probably_damaging'] and hg38_polyphen_pred == 'benign'):
                 polyphen_change = f'{hg19_polyphen_pred.upper()}_TO_{hg38_polyphen_pred.upper()}'
-    
-
-        # Store variant VEP analysis (cached part - no scores)
+        
+        # ===== ASSEMBLE FINAL RESULTS =====
         vep_analysis = {
+            # Basic variant information
             'mapping_status': variant_row['mapping_status'],
             'source_chrom': chrom,
             'source_pos': pos,
@@ -302,29 +331,66 @@ class VEPAnalyzer:
             'bcftools_hg38_pos': variant_row['bcftools_hg38_pos'],
             'pos_difference': variant_row['pos_difference'],
             
-            # VEP analysis results
-            'gene_changes': gene_changes,
-            'impact_changes': impact_changes,
-            'consequence_relationship': consequence_relationship,
-            'consequence_change': consequence_change,
-            
-            # Representative VEP information (FIXED)
-            'hg19_gene': hg19_gene,
-            'hg38_gene': hg38_gene,
-            
             # Transcript counts
             'hg19_transcript_count': hg19_transcript_count,
             'hg38_transcript_count': hg38_transcript_count,
- 
+            
+            # Consequence analysis
+            'consequence_relationship': consequence_relationship,
+            'consequence_change': consequence_change,
+            
+            # MANE information
+            'hg38_mane_flag': hg38_mane_flag,
+            'hg38_mane_transcript_id': hg38_mane_transcript_id,
+            'hg38_mane_details': hg38_mane_details,
+            'hg19_mane_transcript_id': hg19_mane_transcript_id,
+            'hg19_mane_details': hg19_mane_details,
+            
+            # Canonical transcripts
+            'hg19_canonical_transcript': hg19_canonical_transcript,
+            'hg38_canonical_transcript': hg38_canonical_transcript,
+            
+            # Priority transcript selection
+            'transcript_crossbuild_status': transcript_crossbuild_status,
+            'priority_transcript_crossbuild': priority_transcript_crossbuild,
+            
+            # HGVS analysis
+            'priority_hgvsc_hg19': priority_hgvs_analysis['priority_hgvsc_hg19'],
+            'priority_hgvsc_hg38': priority_hgvs_analysis['priority_hgvsc_hg38'],
+            'priority_hgvsp_hg19': priority_hgvs_analysis['priority_hgvsp_hg19'],
+            'priority_hgvsp_hg38': priority_hgvs_analysis['priority_hgvsp_hg38'],
+            'priority_hgvsc_concordance': priority_hgvs_analysis['priority_hgvsc_concordance'],
+            'priority_hgvsp_concordance': priority_hgvs_analysis['priority_hgvsp_concordance'],
+            
+            # Worst consequence analysis
+            'hg19_worst_consequence': worst_consequence_analysis['hg19_worst_consequence'],
+            'hg38_worst_consequence': worst_consequence_analysis['hg38_worst_consequence'],
+            'hg19_worst_consequence_tx': worst_consequence_analysis['hg19_worst_consequence_tx'],
+            'hg38_worst_consequence_tx': worst_consequence_analysis['hg38_worst_consequence_tx'],
+            'hg19_worst_consequence_tx_is_priority': worst_consequence_analysis['hg19_worst_consequence_tx_is_priority'],
+            'hg38_worst_consequence_tx_is_priority': worst_consequence_analysis['hg38_worst_consequence_tx_is_priority'],
+            'has_worst_consequence_difference': worst_consequence_analysis['has_worst_consequence_difference'],
+            
+            # Representative VEP information (CURRENT: fallback method, FUTURE: priority transcript)
+            'hg19_gene': hg19_gene,
+            'hg38_gene': hg38_gene,
             'hg19_impact': hg19_impact,
             'hg38_impact': hg38_impact,
+            'gene_changes': gene_changes,
+            'impact_changes': impact_changes,
+            
+            # Clinical significance (CURRENT: fallback method, FUTURE: priority transcript)
             'hg19_clin_sig': hg19_clin_sig,
             'hg38_clin_sig': hg38_clin_sig,
             'hg19_clin_sig_normalized': hg19_clin_sig_normalized,
             'hg38_clin_sig_normalized': hg38_clin_sig_normalized,
             'clin_sig_change': clin_sig_change,
-            'hg19_gnomad_af': hg19_annotations['gnomadg_af'].iloc[0] if len(hg19_annotations) > 0 else None,
-            'hg38_gnomad_af': hg38_annotations['gnomadg_af'].iloc[0] if len(hg38_annotations) > 0 else None,
+            'hg19_is_pathogenic': hg19_is_pathogenic,
+            'hg38_is_pathogenic': hg38_is_pathogenic,
+            'hg19_is_benign': hg19_is_benign,
+            'hg38_is_benign': hg38_is_benign,
+            
+            # Pathogenicity predictions (CURRENT: fallback method, FUTURE: priority transcript)
             'hg19_sift': hg19_sift,
             'hg38_sift': hg38_sift,
             'sift_change': sift_change,
@@ -332,80 +398,11 @@ class VEPAnalyzer:
             'hg38_polyphen': hg38_polyphen,
             'polyphen_change': polyphen_change,
             
-            # Pathogenicity flags
-            'hg19_is_pathogenic': hg19_is_pathogenic,
-            'hg38_is_pathogenic': hg38_is_pathogenic,
-            'hg19_is_benign': hg19_is_benign,
-            'hg38_is_benign': hg38_is_benign
+            # Population frequency
+            'hg19_gnomad_af': hg19_annotations['gnomadg_af'].iloc[0] if len(hg19_annotations) > 0 else None,
+            'hg38_gnomad_af': hg38_annotations['gnomadg_af'].iloc[0] if len(hg38_annotations) > 0 else None
         }
 
-        # MANE analysis 
-        hg38_mane_flag, hg38_mane_transcript_id, hg38_mane_details = self._analyze_mane_annotations(hg38_annotations)
-        
-        # Check if MANE transcripts from hg38 are present in hg19 (exact version match)
-        hg19_transcript_ids = set()
-        for _, row in hg19_transcripts_df.iterrows():
-            full_id = row['feature']
-            if full_id:
-                hg19_transcript_ids.add(full_id)
-        
-        # Find which MANE transcripts are present in hg19 (exact version match)
-        hg19_mane_present = []
-        if hg38_mane_transcript_id:
-            if hg38_mane_transcript_id in hg19_transcript_ids:
-                hg19_mane_present.append(hg38_mane_transcript_id)
-        
-        hg19_mane_transcript_id = hg19_mane_present[0] if hg19_mane_present else None
-
-        # Format hg19 MANE details to match hg38 format
-        if hg19_mane_present:
-            # Use the same MANE type as hg38 for consistency
-            if hg38_mane_flag == "MANE_Select":
-                hg19_mane_details = f"MANE_Select:{hg19_mane_present[0]}"
-            elif hg38_mane_flag == "MANE_Plus_Clinical":
-                hg19_mane_details = f"MANE_Plus_Clinical:{hg19_mane_present[0]}"
-            else:
-                hg19_mane_details = hg19_mane_present[0]
-        else:
-            hg19_mane_details = "Not_Present"
-        
-        # Canonical transcript identification 
-        hg19_canonical_transcript, hg38_canonical_transcript = self._identify_canonical_transcripts(hg19_transcripts_df, hg38_transcripts_df)
-
-        # Priority transcript selection using MANE-first hierarchy
-        transcript_crossbuild_status, priority_transcript_crossbuild = self._select_priority_transcripts(
-            hg19_transcripts_df, hg38_transcripts_df, hg38_mane_flag, hg38_mane_transcript_id
-        )
-
-        # Analyze HGVSc concordance 
-        priority_hgvs_analysis = analyze_priority_transcript_hgvs(
-            hg19_transcripts_df, hg38_transcripts_df, transcript_crossbuild_status, priority_transcript_crossbuild
-    )
-
-        # Add HGVSc results to the return dictionary
-        vep_analysis.update({
-             # Basic canonical transcript identification
-            'hg19_canonical_transcript': hg19_canonical_transcript,
-            'hg38_canonical_transcript': hg38_canonical_transcript,
-        
-            # MANE information (hg38 source, hg19 presence check)
-            'hg38_mane_flag': hg38_mane_flag,
-            'hg38_mane_transcript_id': hg38_mane_transcript_id,
-            'hg38_mane_details': hg38_mane_details,
-            'hg19_mane_transcript_id': hg19_mane_transcript_id,
-            'hg19_mane_details': hg19_mane_details,
-            # Priority transcript selection using MANE-first hierarchy
-            'transcript_crossbuild_status': transcript_crossbuild_status,
-            'priority_transcript_crossbuild': priority_transcript_crossbuild,
-            # Priority transcript HGVS analysis
-            'priority_hgvsc_hg19': priority_hgvs_analysis['priority_hgvsc_hg19'],
-            'priority_hgvsc_hg38': priority_hgvs_analysis['priority_hgvsc_hg38'],
-            'priority_hgvsp_hg19': priority_hgvs_analysis['priority_hgvsp_hg19'],
-            'priority_hgvsp_hg38': priority_hgvs_analysis['priority_hgvsp_hg38'],
-            'priority_hgvsc_concordance': priority_hgvs_analysis['priority_hgvsc_concordance'],
-            'priority_hgvsp_concordance': priority_hgvs_analysis['priority_hgvsp_concordance']
-        })
-  
         return vep_analysis
         
     def _analyze_mane_annotations(self, annotations_df):

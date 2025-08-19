@@ -258,11 +258,20 @@ def format_for_excel(df):
     output_df['HGVS_p_hg38'] = df['priority_hgvsp_hg38'].fillna('')
     output_df['HGVS_c_Concordance'] = df['priority_hgvsc_concordance'].fillna('No_Analysis')
     output_df['HGVS_p_Concordance'] = df['priority_hgvsp_concordance'].fillna('No_Analysis')
+
+    # Worst consequence analysis
+    output_df['Worst_Consequence_hg19'] = df['hg19_worst_consequence'].fillna('')
+    output_df['Worst_Consequence_hg38'] = df['hg38_worst_consequence'].fillna('')
+    output_df['Worst_Consequence_Tx_hg19'] = df['hg19_worst_consequence_tx'].fillna('')
+    output_df['Worst_Consequence_Tx_hg38'] = df['hg38_worst_consequence_tx'].fillna('')
+    output_df['Worst_Consequence_Tx_Is_Priority_hg19'] = df['hg19_worst_consequence_tx_is_priority'].fillna('NO')
+    output_df['Worst_Consequence_Tx_Is_Priority_hg38'] = df['hg38_worst_consequence_tx_is_priority'].fillna('NO')
   
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Genotype_Issue'] = (df['gt_match'] == 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Gene_Issue'] = (df['gene_changes'] > 0).map({True: 'YES', False: 'NO'})
+    output_df['Has_Worst_Consequence_Difference'] = df['has_worst_consequence_difference'].fillna('NO')
     output_df['Has_Clinical_Change'] = (df['clin_sig_change'] != '').map({True: 'YES', False: 'NO'})
     output_df['Has_Pathogenicity_Change'] = ((df['sift_change'] != '') | (df['polyphen_change'] != '')).map({True: 'YES', False: 'NO'})
 
@@ -354,6 +363,15 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         # Matched transcript analysis
         'consequence_relationship': 'Consequence_Relationship',
         'consequence_change': 'Consequence_Change',
+        # Worst consequence analysis
+        'hg19_worst_consequence': 'Worst_Consequence_hg19',
+        'hg38_worst_consequence': 'Worst_Consequence_hg38',
+        'hg19_worst_consequence_tx': 'Worst_Consequence_Tx_hg19',
+        'hg38_worst_consequence_tx': 'Worst_Consequence_Tx_hg38',
+        'hg19_worst_consequence_tx_is_priority': 'Worst_Consequence_Tx_Is_Priority_hg19',
+        'hg38_worst_consequence_tx_is_priority': 'Worst_Consequence_Tx_Is_Priority_hg38',
+        'has_worst_consequence_difference': 'Has_Worst_Consequence_Difference',
+        # Pathogenic predictions 
         'hg19_sift': 'SIFT_hg19',
         'hg38_sift': 'SIFT_hg38',
         'hg19_polyphen': 'PolyPhen_hg19',

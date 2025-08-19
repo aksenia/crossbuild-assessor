@@ -133,3 +133,96 @@ def analyze_consequence_relationships(hg19_transcripts, hg38_transcripts):
     consequence_change = format_consequence_relationship(consequence_relationship, hg19_str, hg38_str)
 
     return consequence_relationship, consequence_change
+
+def analyze_worst_consequence_transcripts(hg19_transcripts, hg38_transcripts, priority_transcript_crossbuild):
+    """
+    Analyze worst consequence transcripts for each build
+    
+    Args:
+        hg19_transcripts: dict of transcript_id -> transcript_data
+        hg38_transcripts: dict of transcript_id -> transcript_data  
+        priority_transcript_crossbuild: priority transcript ID (same for both builds)
+        
+    Returns:
+        dict: worst consequence analysis results
+    """
+    from config.constants import VEP_CONSEQUENCE_IMPACT
+    
+    def get_consequence_severity_rank(consequence):
+        """Get numeric severity rank for consequence (lower = more severe)"""
+        impact = VEP_CONSEQUENCE_IMPACT.get(consequence, 'MODIFIER')
+        severity_map = {'HIGH': 1, 'MODERATE': 2, 'LOW': 3, 'MODIFIER': 4}
+        return severity_map.get(impact, 4)
+    
+    def find_worst_consequence_transcripts(transcripts):
+        """Find all transcripts with worst consequence in a build"""
+        if not transcripts:
+            return '', []
+        
+        # Find the most severe consequence across all transcripts
+        worst_severity = float('inf')
+        worst_consequence = ''
+        
+        for tx_id, data in transcripts.items():
+            consequence = data.get('consequence', '')
+            if consequence and consequence not in ['', '-']:
+                # Handle comma-separated consequences
+                individual_consequences = [c.strip() for c in consequence.split(',')]
+                for cons in individual_consequences:
+                    severity = get_consequence_severity_rank(cons)
+                    if severity < worst_severity:
+                        worst_severity = severity
+                        worst_consequence = cons
+        
+        # Find all transcripts with this worst consequence
+        worst_consequence_transcripts = []
+        for tx_id, data in transcripts.items():
+            consequence = data.get('consequence', '')
+            if consequence and consequence not in ['', '-']:
+                individual_consequences = [c.strip() for c in consequence.split(',')]
+                if worst_consequence in individual_consequences:
+                    worst_consequence_transcripts.append(tx_id)
+        
+        return worst_consequence, worst_consequence_transcripts
+    
+    # Analyze each build
+    hg19_worst_consequence, hg19_worst_tx_list = find_worst_consequence_transcripts(hg19_transcripts)
+    hg38_worst_consequence, hg38_worst_tx_list = find_worst_consequence_transcripts(hg38_transcripts)
+    
+    # Format transcript lists
+    hg19_worst_consequence_tx = ';'.join(hg19_worst_tx_list) if hg19_worst_tx_list else ''
+    hg38_worst_consequence_tx = ';'.join(hg38_worst_tx_list) if hg38_worst_tx_list else ''
+    
+   # Check if priority transcript has worst consequence (same transcript for both builds)
+    hg19_worst_consequence_tx_is_priority = 'YES' if priority_transcript_crossbuild in hg19_worst_tx_list else 'NO'
+    hg38_worst_consequence_tx_is_priority = 'YES' if priority_transcript_crossbuild in hg38_worst_tx_list else 'NO'
+    
+    # Check if worst consequences differ between builds
+    has_worst_consequence_difference = 'YES' if hg19_worst_consequence != hg38_worst_consequence else 'NO'
+    
+    return {
+        'hg19_worst_consequence': hg19_worst_consequence,
+        'hg38_worst_consequence': hg38_worst_consequence,
+        'hg19_worst_consequence_tx': hg19_worst_consequence_tx,
+        'hg38_worst_consequence_tx': hg38_worst_consequence_tx,
+        'hg19_worst_consequence_tx_is_priority': hg19_worst_consequence_tx_is_priority,
+        'hg38_worst_consequence_tx_is_priority': hg38_worst_consequence_tx_is_priority,
+        'has_worst_consequence_difference': has_worst_consequence_difference
+    }
+
+def get_priority_transcript_data(transcripts_df, priority_transcript_id, column, fallback_annotations_df=None):
+    """Get data from priority transcript, with fallback logic"""
+    # If no priority transcript selected, return empty
+    if not priority_transcript_id or priority_transcript_id == 'NONE':
+        return 'NONE'
+    
+    # Try to get from priority transcript
+    priority_rows = transcripts_df[transcripts_df['feature'] == priority_transcript_id]
+    if len(priority_rows) > 0:
+        value = priority_rows[column].iloc[0]
+        if pd.notna(value) and value not in ['', '-']:
+            return value
+    
+    # If priority transcript doesn't have the data, still return empty
+    # (We don't want to fall back to random transcripts - stick to priority)
+    return 'NONE'
