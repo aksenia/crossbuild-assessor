@@ -17,6 +17,7 @@ from utils.clinical_utils import (
 )
 from config.constants import VEP_CONSEQUENCE_IMPACT
 from utils.hgvs_utils import analyze_priority_transcript_hgvs
+from utils.transcript_utils import analyze_consequence_relationships
 
 class VEPAnalyzer:
     """Analyzes VEP annotations to identify discordances between genome builds"""
@@ -221,61 +222,8 @@ class VEPAnalyzer:
             else:
                 transcript_relationship = 'partial_overlap_transcripts'
 
-            # Step 3: Set-based consequence relationship analysis
-            all_hg19_consequences = set()
-            all_hg38_consequences = set()
-
-            # ROBUST consequence set building with comma-splitting
-            for data in hg19_transcripts.values():
-                consequence_field = data['consequence']
-                if pd.notna(consequence_field) and str(consequence_field).strip():
-                    # Split comma-separated consequences and clean each one
-                    individual_consequences = [c.strip() for c in str(consequence_field).split(',')]
-                    for cons in individual_consequences:
-                        cleaned_cons = clean_string(cons)
-                        if cleaned_cons:  # Only add non-empty cleaned consequences
-                            all_hg19_consequences.add(cleaned_cons)
-
-            for data in hg38_transcripts.values():
-                consequence_field = data['consequence']
-                if pd.notna(consequence_field) and str(consequence_field).strip():
-                    # Split comma-separated consequences and clean each one
-                    individual_consequences = [c.strip() for c in str(consequence_field).split(',')]
-                    for cons in individual_consequences:
-                        cleaned_cons = clean_string(cons)
-                        if cleaned_cons:  # Only add non-empty cleaned consequences
-                            all_hg38_consequences.add(cleaned_cons)
-            
-            # Calculate relationships step by step
-            shared_consequences = all_hg19_consequences & all_hg38_consequences
-            unique_hg19 = all_hg19_consequences - all_hg38_consequences  
-            unique_hg38 = all_hg38_consequences - all_hg19_consequences
-
-            # Determine relationship 
-            if len(all_hg19_consequences) == 0 and len(all_hg38_consequences) == 0:
-                consequence_relationship = 'no_consequences'
-                unmatched_consequences = 0
-            elif len(shared_consequences) > 0 and len(unique_hg19) == 0 and len(unique_hg38) == 0:
-                consequence_relationship = 'matched'
-                unmatched_consequences = 0
-            elif len(shared_consequences) == 0:  # Truly disjoint
-                consequence_relationship = 'disjoint_consequences'
-                # Score based on significant consequences
-                hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in all_hg19_consequences)
-                hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in all_hg38_consequences)
-                unmatched_consequences = 5 if (hg19_significant or hg38_significant) else 0
-            elif len(unique_hg19) == 0:  # hg19 subset of hg38
-                consequence_relationship = 'hg19_subset_of_hg38'
-                unmatched_consequences = 0
-            elif len(unique_hg38) == 0:  # hg38 subset of hg19 
-                consequence_relationship = 'hg38_subset_of_hg19'
-                unmatched_consequences = 0
-            else:  # Partial overlap
-                consequence_relationship = 'partial_overlap_consequences'
-                # Score based on unique significant consequences
-                hg19_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg19)
-                hg38_significant = any(VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'} for cons in unique_hg38)
-                unmatched_consequences = 1 if (hg19_significant or hg38_significant) else 0
+           # Step 3: Consequence relationship analysis
+            consequence_relationship, consequence_change = analyze_consequence_relationships(hg19_transcripts, hg38_transcripts)
             
             # Set other analysis variables for compatibility
             same_consequence_different_transcripts = 0  # Not used in new approach
@@ -287,7 +235,6 @@ class VEPAnalyzer:
             # No transcript data available
             same_transcript_consequence_changes = 0
             same_consequence_different_transcripts = 0
-            unmatched_consequences = 0
             gene_changes = 0
             impact_changes = 0
             problematic_transcripts_hg19 = []
@@ -426,24 +373,18 @@ class VEPAnalyzer:
             'transcript_pairs_analyzed': transcript_pairs_analyzed,
             'same_transcript_consequence_changes': same_transcript_consequence_changes,
             'same_consequence_different_transcripts': same_consequence_different_transcripts,
-            'unmatched_consequences': unmatched_consequences,
             'gene_changes': gene_changes,
             'impact_changes': impact_changes,
             'problematic_transcripts_hg19': '; '.join(problematic_transcripts_hg19) if problematic_transcripts_hg19 else '',
             'problematic_transcripts_hg38': '; '.join(problematic_transcripts_hg38) if problematic_transcripts_hg38 else '',
             'transcript_relationship': transcript_relationship,
             'consequence_relationship': consequence_relationship,
+            'consequence_change': consequence_change,
             
             # Representative VEP information (FIXED)
             'hg19_gene': hg19_gene,
             'hg38_gene': hg38_gene,
-            'hg19_consequences_set': ', '.join(sorted(all_hg19_consequences)) if 'all_hg19_consequences' in locals() else '',
-            'hg38_consequences_set': ', '.join(sorted(all_hg38_consequences)) if 'all_hg38_consequences' in locals() else '',
-            'hg19_high_impact_consequences': ', '.join(sorted([cons for cons in (all_hg19_consequences if 'all_hg19_consequences' in locals() else set()) 
-                                                  if VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'}])),
-            'hg38_high_impact_consequences': ', '.join(sorted([cons for cons in (all_hg38_consequences if 'all_hg38_consequences' in locals() else set()) 
-                                                  if VEP_CONSEQUENCE_IMPACT.get(cons, 'MODIFIER') in {'HIGH', 'MODERATE'}])),
-
+ 
             'hg19_impact': hg19_impact,
             'hg38_impact': hg38_impact,
             'hg19_clin_sig': hg19_clin_sig,

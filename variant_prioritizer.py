@@ -86,7 +86,6 @@ from visualization.plot_generator import PrioritizationPlotter
 from analysis.variant_processor import VariantProcessor
 
 from utils.summary_utils import SummaryDataCalculator
-from utils.data_utils import format_consequence_relationship
 import json
 
 # Set visualization style from config
@@ -117,12 +116,46 @@ def get_impact_numeric_value(impact):
     impact_values = {'HIGH': 4, 'MODERATE': 3, 'LOW': 2, 'MODIFIER': 1}
     return impact_values.get(impact, 0)
 
-def format_consequence_relationship_for_csv(row):
-    return format_consequence_relationship(
-        row.get('consequence_relationship', 'unknown'),
-        row.get('hg19_consequences_set', ''),
-        row.get('hg38_consequences_set', '')
-    )
+def format_allele_for_display(allele_string, max_length=10):
+    """
+    Format allele strings for display, truncating long sequences
+    
+    Args:
+        allele_string: Allele string like "LONG_REF/ALT" 
+        max_length: Maximum length before truncating (default: 10)
+        
+    Returns:
+        str: Formatted allele string
+    """
+    if not allele_string or allele_string == '':
+        return ''
+    
+    if '/' not in allele_string:
+        # Single allele
+        if len(allele_string) > max_length:
+            return f"REFSEQ len={len(allele_string)}"
+        return allele_string
+    
+    # REF/ALT format
+    parts = allele_string.split('/')
+    if len(parts) != 2:
+        return allele_string  # Fallback for unexpected format
+    
+    ref, alt = parts[0], parts[1]
+    
+    # Format REF
+    if len(ref) > max_length:
+        ref_display = f"REFSEQ len={len(ref)}"
+    else:
+        ref_display = ref
+    
+    # Format ALT  
+    if len(alt) > max_length:
+        alt_display = f"ALTSEQ len={len(alt)}"
+    else:
+        alt_display = alt
+    
+    return f"{ref_display}/{alt_display}"
 
 def format_for_excel(df):
     """Format dataframe for Excel compatibility with enhanced clinical details and proper genotype extraction"""
@@ -167,7 +200,6 @@ def format_for_excel(df):
     output_df['Transcript_Pairs_Analyzed'] = df['transcript_pairs_analyzed']
     output_df['Same_Transcript_Consequence_Changes'] = df['same_transcript_consequence_changes']
     output_df['Same_Consequence_Different_Transcripts'] = df['same_consequence_different_transcripts']
-    output_df['Unmatched_Consequences'] = df['unmatched_consequences']
     output_df['Gene_Annotation_Changes'] = df['gene_changes']
     output_df['Impact_Level_Changes'] = df['impact_changes']
     output_df['Problematic_Transcripts_hg19'] = df['problematic_transcripts_hg19']
@@ -180,10 +212,7 @@ def format_for_excel(df):
     output_df['Gene_Match'] = (df['hg19_gene'] == df['hg38_gene']).map({True: 'YES', False: 'NO'})
     
     # VEP consequences (representative - from first transcript if available)
-    output_df['Consequence_hg19'] = df['hg19_consequence'].fillna('')
-    output_df['Consequence_hg38'] = df['hg38_consequence'].fillna('')
-    output_df['Consequence_Match'] = (df['hg19_consequence'] == df['hg38_consequence']).map({True: 'YES', False: 'NO'})
-    
+       
     # Impact
     output_df['Impact_hg19'] = df['hg19_impact'].fillna('')
     output_df['Impact_hg38'] = df['hg38_impact'].fillna('')
@@ -236,7 +265,6 @@ def format_for_excel(df):
     output_df['Has_Genotype_Issue'] = (df['gt_match'] == 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Transcript_Consequence_Issue'] = (df['same_transcript_consequence_changes'] > 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Gene_Issue'] = (df['gene_changes'] > 0).map({True: 'YES', False: 'NO'})
-    output_df['Has_Unmatched_Consequences'] = (df['unmatched_consequences'] > 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Clinical_Change'] = (df['clin_sig_change'] != '').map({True: 'YES', False: 'NO'})
     output_df['Has_Pathogenicity_Change'] = ((df['sift_change'] != '') | (df['polyphen_change'] != '')).map({True: 'YES', False: 'NO'})
 
@@ -271,14 +299,15 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
     output_df['Rank'] = range(1, len(output_df) + 1)
 
     # GT creation using direct data sources
-    output_df['GT_hg19'] = df['source_alleles'].fillna('')
+    output_df['GT_hg19'] = df['source_alleles'].fillna('').apply(lambda x: format_allele_for_display(str(x)) if x else '')
 
     # For hg38, combine bcftools ref/alt
     def create_hg38_gt(row):
         ref = row.get('bcftools_hg38_ref', '')
         alt = row.get('bcftools_hg38_alt', '')
         if pd.notna(ref) and pd.notna(alt) and ref != '' and alt != '':
-            return f"{ref}/{alt}"
+            gt_string = f"{ref}/{alt}"
+            return format_allele_for_display(gt_string)
         return ''
 
     output_df['GT_hg38'] = df.apply(create_hg38_gt, axis=1)
@@ -289,7 +318,7 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'source_chrom': 'Chromosome',
         'source_pos': 'Position_hg19',
         'bcftools_hg38_pos': 'Position_hg38',
-        'source_alleles': 'GT_hg19',
+        'GT_hg19': 'GT_hg19',
         'GT_hg38': 'GT_hg38', 
         'flip': 'Strand_Flip',      
         'swap': 'Ref_Alt_Swap', 
@@ -303,8 +332,6 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg19_impact': 'Impact_hg19',
         'hg38_impact': 'Impact_hg38',
         'impact_changes': 'Impact_Changes',
-        'hg19_high_impact_consequences': 'High_Impact_Consequences_hg19',  
-        'hg38_high_impact_consequences': 'High_Impact_Consequences_hg38',  
         'transcript_relationship': 'Transcript_Relationship',
         'hg19_transcript_count': 'Tx_Count_hg19',
         'hg38_transcript_count': 'Tx_Count_hg38',
@@ -373,19 +400,6 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
             lambda x: 'YES' if x in ['disjoint_consequences', 'partial_overlap_consequences', 'hg19_subset_of_hg38', 'hg38_subset_of_hg19'] else 'NO'
         )
         output_columns.append('Has_Consequence_Change')
-
-    # Add computed Consequence_Change column
-    if 'consequence_relationship' in df.columns:
-        def format_consequence_change(row):
-            return format_consequence_relationship_for_csv(row)
-        
-        output_df['Consequence_Change'] = df.apply(format_consequence_change, axis=1)
-        # Insert right after Consequence_Relationship
-        if 'Consequence_Relationship' in output_columns:
-            insert_index = output_columns.index('Consequence_Relationship') + 1
-            output_columns.insert(insert_index, 'Consequence_Change')
-        else:
-            output_columns.append('Consequence_Change')
     
     # Select only the columns we want in the final output
     final_df = output_df[output_columns].copy()
@@ -551,12 +565,10 @@ def create_summary_statistics(df_full, df_excel, output_dir):
             same_transcript_issues = (df_full['same_transcript_consequence_changes'] > 0).sum()
             gene_issues = (df_full['gene_changes'] > 0).sum()
             impact_issues = (df_full['impact_changes'] > 0).sum()
-            unmatched_issues = (df_full['unmatched_consequences'] > 0).sum()
             
             f.write(f"Same transcript, different consequences: {same_transcript_issues:,} variants (HIGH)\n")
             f.write(f"Gene annotation changes: {gene_issues:,} variants\n")
             f.write(f"Impact level changes: {impact_issues:,} variants\n")
-            f.write(f"Unmatched consequences: {unmatched_issues:,} variants\n")
         f.write("\n")
         
         # SPECIFIC TRANSITION MATRICES

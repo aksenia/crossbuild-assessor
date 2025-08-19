@@ -393,7 +393,6 @@ class SummaryDataCalculator:
                 "same_transcript_changes": (df_full['same_transcript_consequence_changes'] > 0).sum(),
                 "gene_changes": (df_full['gene_changes'] > 0).sum(),
                 "impact_changes": (df_full['impact_changes'] > 0).sum(),
-                "unmatched_consequences": (df_full['unmatched_consequences'] > 0).sum(),
                 "clinical_significance_changes": (df_full['clin_sig_change'] != '').sum() if 'clin_sig_change' in df_full.columns else 0,
                 "pathogenicity_changes": ((df_full['sift_change'] != '') | (df_full['polyphen_change'] != '')).sum() if 'sift_change' in df_full.columns else 0
             }
