@@ -390,7 +390,6 @@ class SummaryDataCalculator:
         functional_discordances = {}
         if len(df_full) > 0:
             functional_discordances = {
-                "same_transcript_changes": (df_full['same_transcript_consequence_changes'] > 0).sum(),
                 "gene_changes": (df_full['gene_changes'] > 0).sum(),
                 "impact_changes": (df_full['impact_changes'] > 0).sum(),
                 "clinical_significance_changes": (df_full['clin_sig_change'] != '').sum() if 'clin_sig_change' in df_full.columns else 0,
@@ -402,7 +401,6 @@ class SummaryDataCalculator:
         if len(df_excel) > 0:
             # Count DISTINCT variants with critical issues
             critical_variants_mask = (
-                (df_full['same_transcript_consequence_changes'] > 0) | 
                 (df_full['clin_sig_change'].isin(['BENIGN_TO_PATHOGENIC', 'PATHOGENIC_TO_BENIGN', 'VUS_TO_PATHOGENIC']))
             )
             critical_variants_count = critical_variants_mask.sum()

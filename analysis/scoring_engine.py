@@ -64,8 +64,8 @@ class ClinicalScorer:
                     elif impact_magnitude == 1 and ('HIGH' in [hg19_impact, hg38_impact] or 'MODERATE' in [hg19_impact, hg38_impact]):
                         priority_score += 10
             
-            # HIGH: Functionally significant changes (demoted from CRITICAL)
-            priority_score += row['same_transcript_consequence_changes'] * self.base_scores['same_transcript_consequence_changes']
+            # HIGH: Functionally significant changes - TO MANE
+#            priority_score += row['same_transcript_consequence_changes'] * self.base_scores['same_transcript_consequence_changes']
             
             # MODERATE: Pathogenicity prediction changes
             if row['sift_change']:
@@ -96,9 +96,7 @@ class ClinicalScorer:
             elif consequence_relationship == 'partial_overlap_consequences':
                 priority_score += self.base_scores['partial_overlap_consequences']
             # subset consequences and matched get 0 points
-            
-            priority_score += row['same_consequence_different_transcripts'] * self.base_scores['same_consequence_different_transcripts']
-            
+                       
             # Technical liftover issues (unchanged)
             if row['pos_match'] == 0:
                 priority_score += self.base_scores['position_mismatch']
@@ -176,8 +174,7 @@ class ClinicalScorer:
             if has_critical_clinical_change or has_high_impact_transition:
                 priority_category = 'CRITICAL'
             elif (row['impact_changes'] > 0 and is_clinically_significant) or \
-                (row['clin_sig_change'] in concerning_clinical_changes) or \
-                row['same_transcript_consequence_changes'] > 0:
+                (row['clin_sig_change'] in concerning_clinical_changes):
                 priority_category = 'HIGH'
             elif row['sift_change'] or row['polyphen_change'] or \
                 row.get('consequence_relationship') == 'disjoint_consequences':
@@ -212,8 +209,6 @@ class ClinicalScorer:
                 discordance_summary.append(f"CRITICAL impact transition: {hg19_impact}→{hg38_impact}")
 
             # HIGH level discordances
-            if row['same_transcript_consequence_changes'] > 0:
-                discordance_summary.append(f"Same transcript consequence changes: {row['same_transcript_consequence_changes']}")
             if row['impact_changes'] > 0 and is_clinically_significant:
                 discordance_summary.append(f"Impact level changes: {row['impact_changes']}")
 
@@ -232,8 +227,6 @@ class ClinicalScorer:
                 discordance_summary.append(f"Partial consequence overlap between builds")
             if row.get('consequence_relationship') in ['hg19_subset_of_hg38', 'hg38_subset_of_hg19']:
                 discordance_summary.append(f"Consequence subset relationship (annotation completeness)")
-            if row['same_consequence_different_transcripts'] > 0:
-                discordance_summary.append(f"Same consequence, different transcripts: {row['same_consequence_different_transcripts']}")
             if row['pos_match'] == 0:
                 discordance_summary.append(f"Position mismatch")
             if row['gt_match'] == 0:

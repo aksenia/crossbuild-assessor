@@ -197,13 +197,8 @@ def format_for_excel(df):
     output_df['Ref_Alt_Swap'] = df['swap'].fillna('')
     
     # Enhanced transcript analysis with problematic transcript lists
-    output_df['Transcript_Pairs_Analyzed'] = df['transcript_pairs_analyzed']
-    output_df['Same_Transcript_Consequence_Changes'] = df['same_transcript_consequence_changes']
-    output_df['Same_Consequence_Different_Transcripts'] = df['same_consequence_different_transcripts']
     output_df['Gene_Annotation_Changes'] = df['gene_changes']
     output_df['Impact_Level_Changes'] = df['impact_changes']
-    output_df['Problematic_Transcripts_hg19'] = df['problematic_transcripts_hg19']
-    output_df['Problematic_Transcripts_hg38'] = df['problematic_transcripts_hg38']
     output_df['Discordance_Summary'] = df['discordance_summary']
     
     # Gene information
@@ -263,7 +258,6 @@ def format_for_excel(df):
     # Summary flags for quick filtering
     output_df['Has_Position_Issue'] = (df['pos_match'] == 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Genotype_Issue'] = (df['gt_match'] == 0).map({True: 'YES', False: 'NO'})
-    output_df['Has_Transcript_Consequence_Issue'] = (df['same_transcript_consequence_changes'] > 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Gene_Issue'] = (df['gene_changes'] > 0).map({True: 'YES', False: 'NO'})
     output_df['Has_Clinical_Change'] = (df['clin_sig_change'] != '').map({True: 'YES', False: 'NO'})
     output_df['Has_Pathogenicity_Change'] = ((df['sift_change'] != '') | (df['polyphen_change'] != '')).map({True: 'YES', False: 'NO'})
@@ -332,7 +326,6 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg19_impact': 'Impact_hg19',
         'hg38_impact': 'Impact_hg38',
         'impact_changes': 'Impact_Changes',
-        'transcript_relationship': 'Transcript_Relationship',
         'hg19_transcript_count': 'Tx_Count_hg19',
         'hg38_transcript_count': 'Tx_Count_hg38',
         # MANE information
@@ -357,9 +350,6 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         # Matched transcript analysis
         'consequence_relationship': 'Consequence_Relationship',
         'consequence_change': 'Consequence_Change',
-        'problematic_transcripts_hg19': 'Problematic_Transcripts_hg19',
-        'problematic_transcripts_hg38': 'Problematic_Transcripts_hg38',
-        'same_transcript_consequence_changes': 'Transcript_Changes',
         'hg19_sift': 'SIFT_hg19',
         'hg38_sift': 'SIFT_hg38',
         'hg19_polyphen': 'PolyPhen_hg19',
@@ -562,11 +552,9 @@ def create_summary_statistics(df_full, df_excel, output_dir):
         f.write("FUNCTIONAL DISCORDANCES:\n")
         f.write("-" * 25 + "\n")
         if len(df_full) > 0:
-            same_transcript_issues = (df_full['same_transcript_consequence_changes'] > 0).sum()
             gene_issues = (df_full['gene_changes'] > 0).sum()
             impact_issues = (df_full['impact_changes'] > 0).sum()
             
-            f.write(f"Same transcript, different consequences: {same_transcript_issues:,} variants (HIGH)\n")
             f.write(f"Gene annotation changes: {gene_issues:,} variants\n")
             f.write(f"Impact level changes: {impact_issues:,} variants\n")
         f.write("\n")

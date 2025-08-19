@@ -40,7 +40,6 @@ BASE_SCORES = {
     
     # HIGH: Functionally significant changes
     'clinical_sig_other_change': 8,                # Other clinical changes (VUS transitions, etc.)
-    'same_transcript_consequence_changes': 6,      # DEMOTED: Same transcript changes
     
     # MODERATE: Prediction and annotation changes
     'sift_change': 5,                              # SIFT prediction changes
@@ -55,7 +54,6 @@ BASE_SCORES = {
     'disjoint_consequences': 5,                    # Genuine functional discordance (MODERATE)
     'partial_overlap_consequences': 1,             # Mixed signal (LOW)
     'subset_consequences': 0,                      # Annotation completeness (no weight)
-    'same_consequence_different_transcripts': 0.5, # DEMOTED: Different transcripts
     'position_mismatch': 3,                        # Position issues (liftover problems)
     'genotype_mismatch': 3,                        # Genotype issues (liftover problems)
     'position_difference_moderate': 2,             # >10bp difference
