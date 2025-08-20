@@ -44,9 +44,9 @@ class PrioritizationPlotter:
         
         # PLOT 1: Clinical Evidence Distribution by Build 
         self._plot_clinical_evidence_by_build(df, axes[0,0])
-        
-        # PLOT 2: CANONICAL HGVSc Match vs Clinical Changes 
-        self._plot_canonical_hgvsc_match(df, axes[0,1])
+
+        # PLOT 2: HGVSc Concordance Overview
+        self._plot_hgvs_concordance_overview(df, axes[0,1])
         
         # PLOT 3: Clinical Significance Transitions with Grouping 
         self._plot_clinical_significance_transitions_grouped(df, axes[1,0])
@@ -121,192 +121,89 @@ class PrioritizationPlotter:
                       fontsize=12, transform=ax.transAxes)
             ax.set_title('Clinical Significance Distribution by Build', fontsize=12, fontweight='bold')
 
-    def _plot_canonical_hgvsc_match(self, df, ax):
-        """Plot 2: HGVSc Concordance Rate by Clinical Significance Groups"""
-        print("2. Creating HGVSc Concordance Rate by Clinical Significance...")
+    def _plot_hgvs_concordance_overview(self, df, ax):
+        """Plot 2: Simple HGVS Concordance Overview (HGVSc vs HGVSp)"""
+        print("2. Creating HGVS Concordance Overview...")
         
-        if len(df) > 0 and 'Clinical_Change_Direction' in df.columns and 'priority_hgvsc_concordance' in df.columns:
-            # Create clinical significance groups
-            def categorize_clinical_significance(row):
-                clin_change = str(row.get('Clinical_Change_Direction', ''))
-                
-                if clin_change.startswith('STABLE_PATHOGENIC'):
-                    return 'Stable Pathogenic'
-                elif clin_change.startswith('STABLE_BENIGN'):
-                    return 'Stable Benign'
-                elif clin_change.startswith('STABLE_VUS'):
-                    return 'Stable VUS'
-                elif clin_change.startswith('STABLE_'):
-                    return 'Stable Other'
-                elif any(x in clin_change for x in ['PATHOGENIC', 'BENIGN', 'VUS']):
-                    return 'Transitions'
-                else:
-                    return 'No Clinical Data'
+        if len(df) > 0 and 'priority_hgvsc_concordance' in df.columns and 'priority_hgvsp_concordance' in df.columns:
             
-            # Apply categorization
-            df_plot = df.copy()
-            df_plot['Clinical_Group'] = df_plot.apply(categorize_clinical_significance, axis=1)
+            # Calculate concordance rates for HGVSc
+            hgvsc_total = len(df)
+            hgvsc_match = (df['priority_hgvsc_concordance'] == 'Match').sum()
+            hgvsc_mismatch = (df['priority_hgvsc_concordance'] == 'Mismatch').sum()
+            hgvsc_no_analysis = (df['priority_hgvsc_concordance'] == 'No_Analysis').sum()
             
-            # Calculate HGVSc concordance rates for each group
-            clinical_groups = ['Stable Pathogenic', 'Stable Benign', 'Stable VUS', 'Transitions', 'Stable Other', 'No Clinical Data']
+            # Calculate concordance rates for HGVSp
+            hgvsp_total = len(df)
+            hgvsp_match = (df['priority_hgvsp_concordance'] == 'Match').sum()
+            hgvsp_mismatch = (df['priority_hgvsp_concordance'] == 'Mismatch').sum()
+            hgvsp_no_analysis = (df['priority_hgvsp_concordance'] == 'No_Analysis').sum()
             
-            match_rates = []
-            mismatch_rates = []
-            no_analysis_rates = []
-            group_counts = []
-            filtered_groups = []
+            # Convert to percentages
+            hgvsc_match_pct = (hgvsc_match / hgvsc_total) * 100
+            hgvsc_mismatch_pct = (hgvsc_mismatch / hgvsc_total) * 100
+            hgvsc_no_analysis_pct = (hgvsc_no_analysis / hgvsc_total) * 100
             
-            for group in clinical_groups:
-                group_df = df_plot[df_plot['Clinical_Group'] == group]
-                count = len(group_df)
-                
-                if count > 0:
-                    matches = (group_df['priority_hgvsc_concordance'] == 'Match').sum()
-                    mismatches = (group_df['priority_hgvsc_concordance'] == 'Mismatch').sum()
-                    no_analysis = (group_df['priority_hgvsc_concordance'] == 'No_Analysis').sum()
-                    
-                    match_rates.append(matches/count*100)
-                    mismatch_rates.append(mismatches/count*100)
-                    no_analysis_rates.append(no_analysis/count*100)
-                    group_counts.append(count)
-                    filtered_groups.append(group)
+            hgvsp_match_pct = (hgvsp_match / hgvsp_total) * 100
+            hgvsp_mismatch_pct = (hgvsp_mismatch / hgvsp_total) * 100
+            hgvsp_no_analysis_pct = (hgvsp_no_analysis / hgvsp_total) * 100
             
-            if filtered_groups:
-                # Use colors from config
-                priority_colors = self.plot_colors.get('priority', ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4'])
-                
-                # Create stacked bar plot
-                x = range(len(filtered_groups))
-                
-                # Plot stacked bars: Match (green), Mismatch (red), No Analysis (gray)
-                bars1 = ax.bar(x, match_rates, label='Match', color=priority_colors[2], alpha=0.8)
-                bars2 = ax.bar(x, mismatch_rates, bottom=match_rates, label='Mismatch', color=priority_colors[0], alpha=0.8)
-                bars3 = ax.bar(x, no_analysis_rates, bottom=[m+mm for m,mm in zip(match_rates, mismatch_rates)], 
-                            label='No Analysis', color='#7f7f7f', alpha=0.8)
-                
-                # Customize plot
-                ax.set_xlabel('Clinical Significance Groups', fontweight='bold')
-                ax.set_ylabel('HGVSc Concordance Rate (%)', fontweight='bold')
-                ax.set_title('MANE-Based HGVSc Concordance by Clinical Significance', 
-                            fontsize=12, fontweight='bold')
-                
-                ax.set_xticks(x)
-                ax.set_xticklabels([f"{group}\n(n={count})" for group, count in zip(filtered_groups, group_counts)], 
-                                rotation=45, ha='right')
-                
-                ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-                ax.grid(True, alpha=0.3, axis='y')
-                ax.set_ylim(0, 100)
-                
-                # Add percentage labels on bars
-                for i, (bar1, bar2) in enumerate(zip(bars1, bars2)):
-                    if match_rates[i] > 5:
-                        ax.text(bar1.get_x() + bar1.get_width()/2, bar1.get_height()/2,
-                            f'{match_rates[i]:.0f}%', ha='center', va='center',
-                            fontweight='bold', color='white', fontsize=8)
-                    if mismatch_rates[i] > 5:
-                        ax.text(bar2.get_x() + bar2.get_width()/2, 
-                            match_rates[i] + bar2.get_height()/2,
-                            f'{mismatch_rates[i]:.0f}%', ha='center', va='center',
-                            fontweight='bold', color='white', fontsize=8)
-            else:
-                ax.text(0.5, 0.5, 'No variants with\nclinical significance data', 
-                    ha='center', va='center', fontsize=12, transform=ax.transAxes)
-                ax.set_title('MANE-Based HGVSc Concordance by Clinical Significance', 
-                            fontsize=12, fontweight='bold')
-        else:
-            ax.text(0.5, 0.5, 'Required columns not\navailable in data', 
-                ha='center', va='center', fontsize=12, transform=ax.transAxes)
-            ax.set_title('MANE-Based HGVSc Concordance by Clinical Significance', 
+            # Data for plotting
+            categories = ['Match', 'Mismatch', 'No Analysis']
+            hgvsc_values = [hgvsc_match_pct, hgvsc_mismatch_pct, hgvsc_no_analysis_pct]
+            hgvsp_values = [hgvsp_match_pct, hgvsp_mismatch_pct, hgvsp_no_analysis_pct]
+            
+            # Use colors from config
+            priority_colors = self.plot_colors.get('priority', ['#d62728', '#ff7f0e', '#2ca02c', '#1f77b4'])
+            colors = [priority_colors[2], priority_colors[0], '#7f7f7f']  # Green, Red, Gray
+            
+            # Create grouped bar plot
+            x = np.arange(len(categories))
+            width = 0.35
+            
+            bars1 = ax.bar(x - width/2, hgvsc_values, width, 
+                        label=f'HGVSc (n={hgvsc_total})', color=colors, alpha=0.8)
+            bars2 = ax.bar(x + width/2, hgvsp_values, width,
+                        label=f'HGVSp (n={hgvsp_total})', color=colors, alpha=0.6)
+            
+            # Customize plot using config
+            ax.set_xlabel('HGVS Concordance Status', fontweight='bold')
+            ax.set_ylabel('Percentage of Variants (%)', fontweight='bold')
+            ax.set_title('HGVS Concordance Overview\n(Priority Transcript Analysis)', 
                         fontsize=12, fontweight='bold')
+            ax.set_xticks(x)
+            ax.set_xticklabels(categories)
+            ax.legend()
+            ax.grid(True, alpha=0.3, axis='y')
+            ax.set_ylim(0, 100)
             
-    def _plot_impact_transitions_grouped(self, df, ax):
-        """Plot 2: Impact transitions with grouping (REDESIGNED)"""
-        print("2. Creating impact transitions with grouping...")
-        
-        if len(df) > 0:
-            # Group impacts: HIGH, MODERATE, LOW-IMPACT (LOW+MODIFIER)
-            df_copy = df.copy()
-            df_copy['hg19_impact_grouped'] = df_copy['hg19_impact'].apply(
-                lambda x: 'LOW-IMPACT' if x in ['LOW', 'MODIFIER'] else x
-            )
-            df_copy['hg38_impact_grouped'] = df_copy['hg38_impact'].apply(
-                lambda x: 'LOW-IMPACT' if x in ['LOW', 'MODIFIER'] else x
-            )
-            
-            # Categorize transitions
-            def categorize_impact_transition(row):
-                hg19 = row['hg19_impact_grouped']
-                hg38 = row['hg38_impact_grouped']
+            # Add percentage and count labels on bars
+            for i, (bar1, bar2) in enumerate(zip(bars1, bars2)):
+                # HGVSc labels
+                if hgvsc_values[i] > 3:  # Only show if bar is big enough
+                    count_c = [hgvsc_match, hgvsc_mismatch, hgvsc_no_analysis][i]
+                    ax.text(bar1.get_x() + bar1.get_width()/2, bar1.get_height() + 1,
+                        f'{hgvsc_values[i]:.1f}%\n({count_c})', ha='center', va='bottom',
+                        fontweight='bold', fontsize=8)
                 
-                if hg19 == hg38:
-                    return f'Stable {hg19}'
-                elif hg38 == 'HIGH':
-                    return '→ HIGH'
-                elif hg38 == 'MODERATE':
-                    return '→ MODERATE'
-                elif hg19 == 'HIGH':
-                    return 'FROM HIGH →'
-                elif hg19 == 'MODERATE':
-                    return 'FROM MODERATE →'
-                elif hg19 == 'LOW-IMPACT' and hg38 == 'LOW-IMPACT':
-                    return 'LOW-IMPACT Transitions'
-                else:
-                    return 'Other Transitions'
+                # HGVSp labels  
+                if hgvsp_values[i] > 3:  # Only show if bar is big enough
+                    count_p = [hgvsp_match, hgvsp_mismatch, hgvsp_no_analysis][i]
+                    ax.text(bar2.get_x() + bar2.get_width()/2, bar2.get_height() + 1,
+                        f'{hgvsp_values[i]:.1f}%\n({count_p})', ha='center', va='bottom',
+                        fontweight='bold', fontsize=8)
             
-            df_copy['impact_transition_category'] = df_copy.apply(categorize_impact_transition, axis=1)
+            # Add summary text box
+            summary_text = f"Total Variants: {hgvsc_total:,}\nHGVSc Issues: {hgvsc_mismatch+hgvsc_no_analysis} ({((hgvsc_mismatch+hgvsc_no_analysis)/hgvsc_total*100):.1f}%)\nHGVSp Issues: {hgvsp_mismatch+hgvsp_no_analysis} ({((hgvsp_mismatch+hgvsp_no_analysis)/hgvsp_total*100):.1f}%)"
+            ax.text(0.02, 0.98, summary_text, transform=ax.transAxes, fontsize=9,
+                verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
             
-            # Order categories
-            category_order = [
-                'Stable HIGH', 'Stable MODERATE', 'Stable LOW-IMPACT',
-                '→ HIGH', '→ MODERATE',
-                'FROM HIGH →', 'FROM MODERATE →',
-                'LOW-IMPACT Transitions', 'Other Transitions'
-            ]
-            
-            transition_counts = df_copy['impact_transition_category'].value_counts()
-            transition_counts = transition_counts.reindex([cat for cat in category_order if cat in transition_counts.index])
-            
-            if len(transition_counts) > 0:
-                # Color coding: stable (blue), gains (red), losses (orange), low-impact (gray)
-                colors = []
-                for cat in transition_counts.index:
-                    if 'Stable' in cat:
-                        colors.append('#1f77b4')  # Blue for stable
-                    elif '→' in cat and 'FROM' not in cat:
-                        colors.append('#d62728')  # Red for clinical gains
-                    elif 'FROM' in cat:
-                        colors.append('#ff7f0e')  # Orange for clinical losses
-                    elif 'LOW-IMPACT' in cat:
-                        colors.append('#7f7f7f')  # Gray for low impact
-                    else:
-                        colors.append('#9467bd')  # Purple for other
-                
-                bars = ax.bar(range(len(transition_counts)), transition_counts.values,
-                             color=colors, alpha=0.8)
-                
-                ax.set_xlabel('Impact Transition Category', fontweight='bold')
-                ax.set_ylabel('Variant Count', fontweight='bold')
-                ax.set_title('Impact Transitions (hg19→hg38)\nGrouped by Clinical Significance', fontsize=12, fontweight='bold')
-                ax.set_xticks(range(len(transition_counts)))
-                ax.set_xticklabels(transition_counts.index, rotation=45, ha='right', fontsize=9)
-                ax.grid(True, alpha=0.3, axis='y')
-                
-                # Add count labels
-                for bar in bars:
-                    height = bar.get_height()
-                    if height > 0:
-                        ax.text(bar.get_x() + bar.get_width()/2, height + transition_counts.max()*0.01,
-                               f'{int(height)}', ha='center', va='bottom', fontweight='bold', fontsize=9)
-            else:
-                ax.text(0.5, 0.5, 'No impact transitions\nfound', ha='center', va='center',
-                          fontsize=12, transform=ax.transAxes)
-                ax.set_title('Impact Transitions (hg19→hg38)\nGrouped by Clinical Significance', fontsize=12, fontweight='bold')
         else:
-            ax.text(0.5, 0.5, 'No variants\nfound', ha='center', va='center',
-                      fontsize=12, transform=ax.transAxes)
-            ax.set_title('Impact Transitions (hg19→hg38)\nGrouped by Clinical Significance', fontsize=12, fontweight='bold')
-    
+            ax.text(0.5, 0.5, 'HGVS concordance data\nnot available', 
+                ha='center', va='center', fontsize=12, transform=ax.transAxes)
+            ax.set_title('HGVS Concordance Overview\n(Priority Transcript Analysis)', 
+                        fontsize=12, fontweight='bold')
+                
     def _plot_clinical_significance_transitions_grouped(self, df, ax):
         """Plot 3: Clinical significance transitions with grouping (REDESIGNED)"""
         print("3. Creating clinical significance transitions with grouping...")
@@ -390,21 +287,22 @@ class PrioritizationPlotter:
         print("4. Creating primary discordance types visualization...")
         
         if len(df) > 0:
-            df['discordance_primary'] = df['discordance_summary'].apply(self._categorize_discordance_primary)
+            df['discordance_primary'] = df['score_breakdown'].apply(self._categorize_discordance_primary)
             discordance_counts = df['discordance_primary'].value_counts()
             
-            # Order categories by clinical importance
+            # Order exactly following our BASE_SCORES hierarchy (high to low points)
             discordance_order = [
-                'CRITICAL Clinical\nSignificance Change',
-                'Clinical\nSignificance Change', 
-                'Same Transcript\nConsequence Change',
-                'Disjoint Functional\nConsequences',
-                'Impact Level\nChange',
-                'Pathogenicity\nPrediction Change',
-                'Technical/Annotation\nIssues',
-                'Other'
+                'HGVS Changes',              # 100/50 points - CRITICAL
+                'Major Clinical\nChanges',   # 90 points - CRITICAL (P↔B only)
+                'Transcript\nIssues',        # 60 points - MODERATE  
+                'Other Clinical\nChanges',   # 40/25/20 points - MODERATE/LOW
+                'Consequence\nDifference',   # 35/20 points - MODERATE/LOW
+                'Technical\nLiftover Issues', # 20/15/10 points - LOW
+                'Annotation\nChanges',       # 15 points - LOW
+                'Prediction\nChanges',       # 10 points - LOW
+                'Other Issues',
+                'No Issues'
             ]
-            
             discordance_counts = discordance_counts.reindex([cat for cat in discordance_order if cat in discordance_counts.index])
             
             bars = ax.bar(range(len(discordance_counts)), discordance_counts.values,
@@ -427,33 +325,31 @@ class PrioritizationPlotter:
             ax.set_title('Variants by Primary Discordance Type\n(Functional Changes)', fontsize=12, fontweight='bold')
     
     def _categorize_discordance_primary(self, summary):
-        """Categorize discordance with combined low-priority categories for visual clarity"""
+        """Categorize discordance based on score breakdown from new scoring system"""
         if pd.isna(summary) or summary == '':
-            return 'Other'
+            return 'No Issues'
         
-        summary_lower = summary.lower()
+        summary_lower = str(summary).lower()
         
-        # PRIORITY ORDER: Clinical impact first (highest priority)
-        if 'critical clinical significance' in summary_lower:
-            return 'CRITICAL Clinical\nSignificance Change'
-        elif 'clinical significance' in summary_lower:
-            return 'Clinical\nSignificance Change'
-        elif 'same transcript consequence' in summary_lower:
-            return 'Same Transcript\nConsequence Change'
-        elif 'disjoint functional consequences' in summary_lower:
-            return 'Disjoint Functional\nConsequences'
-        elif 'impact level' in summary_lower:
-            return 'Impact Level\nChange'
-        elif 'sift prediction change' in summary_lower or 'polyphen prediction change' in summary_lower:
-            return 'Pathogenicity\nPrediction Change'
-        elif any(term in summary_lower for term in [
-            'gene symbol changes', 'consequence subset', 'consequence subset relationship',
-            'position mismatch', 'genotype mismatch', 'annotation noise',
-            'partial consequence overlap', 'same consequence, different transcripts'
-        ]):
-            return 'Technical/Annotation\nIssues'
+        # PRIORITY ORDER: Exactly following our BASE_SCORES hierarchy
+        if 'hgvsc mismatch' in summary_lower or 'hgvsp mismatch' in summary_lower:
+            return 'HGVS Changes'                 # 100/50 points - CRITICAL
+        elif 'pathogenic↔benign change' in summary_lower:
+            return 'Major Clinical\nChanges'      # 90 points - CRITICAL (P↔B, LP↔B)
+        elif any(x in summary_lower for x in ['pathogenic↔vus change', 'vus↔benign change', 'minor clinical change']):
+            return 'Other Clinical\nChanges'      # 40/25/20 points - MODERATE/LOW
+        elif 'transcript mismatch' in summary_lower:
+            return 'Transcript\nIssues'           # 60 points - MODERATE
+        elif 'serious consequence difference' in summary_lower or 'minor consequence difference' in summary_lower:
+            return 'Consequence\nDifference'      # 35/20 points - MODERATE/LOW
+        elif any(x in summary_lower for x in ['position mismatch', 'genotype mismatch', 'ref/alt swap']):
+            return 'Technical\nLiftover Issues'   # 20/15/10 points - LOW
+        elif 'sift change' in summary_lower or 'polyphen change' in summary_lower:
+            return 'Prediction\nChanges'          # 10 points - LOW
+        elif 'gene changes' in summary_lower or 'impact changes' in summary_lower:
+            return 'Annotation\nChanges'          # 15 points - LOW
         else:
-            return 'Technical/Annotation\nIssues' 
+            return 'Other Issues'
     
     def _print_summary_statistics(self, df, conn):
         """Print enhanced summary statistics"""

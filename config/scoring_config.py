@@ -1,90 +1,99 @@
 """
-Clinical evidence-first discrepancy scoring configuration
+Priority transcript-based discrepancy scoring configuration
 
-REDESIGNED PRIORITIZATION FOCUS:
-- Clinical significance changes (rare but critical for interpretation)
-- Impact level transitions (functionally significant)
-- Reduced weight for VEP consequence mismatches (common annotation noise)
+PRIORITY TRANSCRIPT FOCUS:
+- HGVS concordance on priority transcript (clinician #1 priority)
+- Clinical significance changes (pathogenic<->benign critical)
+- De-prioritized VUS and missing data (less clinically actionable)
 
-Scoring weights prioritize changes that affect clinical decision-making.
+Scoring weights prioritize HGVS mismatches and clinical decision-making changes.
 """
 
-# Clinical evidence-first impact transition scoring
-IMPACT_TRANSITION_SCORES = {
-    # HIGH impact transitions (clinically critical)
-    ('HIGH', 'MODERATE'): 15,    # HIGH ↔ MODERATE (critical for clinical interpretation)
-    ('HIGH', 'LOW'): 18,         # HIGH ↔ LOW (very critical)
-    ('HIGH', 'MODIFIER'): 20,    # HIGH ↔ MODIFIER (extremely critical)
-    
-    # MODERATE impact transitions (clinically significant)
-    ('MODERATE', 'LOW'): 10,     # MODERATE ↔ LOW (significant)
-    ('MODERATE', 'MODIFIER'): 12, # MODERATE ↔ MODIFIER (significant)
-    
-    # LOW impact transitions (annotation noise - minimal weight)
-    ('LOW', 'MODIFIER'): 1       # LOW ↔ MODIFIER (mostly annotation differences)
+# Priority transcript-based scoring thresholds (4-category system)
+PRIORITY_THRESHOLDS = {
+    'CRITICAL': 100,
+    'MODERATE': 60,
+    'LOW': 20,
+    'CONCORDANT': 0
 }
 
-# Clinical evidence override factors (unchanged - these work well)
-CLINICAL_OVERRIDE = {
-    'benign_reduction_factor': 0.1,   # 90% score reduction for benign variants
-    'pathogenic_boost_factor': 2.0    # 2x score boost for pathogenic variants
-}
+# Priority categories (simplified from 5 to 4)
+PRIORITY_CATEGORIES = ['CRITICAL', 'MODERATE', 'LOW', 'CONCORDANT']
 
-# REDESIGNED: Clinical evidence-first scoring weights
+# Clinician-priority scoring: HGVS mismatches first, VUS/missing data de-prioritized
 BASE_SCORES = {
-    # CRITICAL: Clinical interpretation changes (highest priority)
-    'clinical_sig_pathogenic_benign_change': 20,    # PATHOGENIC↔BENIGN (critical)
-    'clinical_sig_vus_to_pathogenic': 15,          # VUS→PATHOGENIC (critical)
-    'clinical_sig_benign_to_pathogenic': 20,       # BENIGN→PATHOGENIC (critical)
-    'clinical_sig_pathogenic_to_benign': 18,       # PATHOGENIC→BENIGN (critical)
+    # CRITICAL (100+ points) - Clinician TOP priorities
+    'priority_hgvsc_mismatch': 100,           # #1 PRIORITY - HGVS mismatches
+    'pathogenic_benign_flip': 90,             # P↔B, LP↔B, P↔LB (major clinical impact)
+    'priority_hgvsp_mismatch': 50,            # Protein-level mismatches
     
-    # HIGH: Functionally significant changes
-    'clinical_sig_other_change': 8,                # Other clinical changes (VUS transitions, etc.)
+    # MODERATE (60-99 points) - Moderate clinical concern
+    'transcript_mismatch': 60,                # No priority transcript in one build
+    'pathogenic_vus_change': 40,              # P↔VUS, LP↔VUS (some uncertainty)
+    'serious_consequence_difference': 35,      # HIGH→MODERATE impact changes
     
-    # MODERATE: Prediction and annotation changes
-    'sift_change': 5,                              # SIFT prediction changes
-    'polyphen_change': 5,                          # PolyPhen prediction changes
-    'gene_changes_high_impact': 4,                 # Gene changes (high impact context)
-    'gene_changes_moderate_impact': 3,             # Gene changes (moderate impact context)
-    'gene_changes_low_impact': 2,                  # Gene changes (low impact context)
-    'gene_changes_minimal_weight': 0.1,            # Gene changes (not clinically relevant)
-    'gene_changes_mixed_impact': 2,                # Gene changes (mixed/unknown impact)
+    # LOW (20-59 points) - Minor issues  
+    'vus_benign_change': 25,                  # VUS↔B, VUS↔LB (less actionable)
+    'minor_clinical_changes': 20,             # Likely↔Definite (same direction)
+    'gene_changes': 15,
+    'impact_changes': 15,
+    'prediction_changes': 10,
     
-    # LOW: Technical and annotation issues (reduced weights)
-    'disjoint_consequences': 5,                    # Genuine functional discordance (MODERATE)
-    'partial_overlap_consequences': 1,             # Mixed signal (LOW)
-    'subset_consequences': 0,                      # Annotation completeness (no weight)
-    'position_mismatch': 3,                        # Position issues (liftover problems)
-    'genotype_mismatch': 3,                        # Genotype issues (liftover problems)
-    'position_difference_moderate': 2,             # >10bp difference
-    'position_difference_large': 3,                # >100bp difference
-    'ref_alt_swap': 2,                            # BCFtools swap occurred
-    
-    # Bonuses (unchanged)
-    'has_clinical_data_bonus': 2,                 # Any clinical data available
-    'region_mapping_bonus': 1,                    # REGION mapping status
-    'high_impact_bonus': 2                        # HIGH impact in either build
+    # Minimal scoring for missing data
+    'missing_clinical_data': 5,               # NONE/missing values (de-prioritized)
+    'missing_hgvs_data': 5,                   # No HGVS available for comparison
+
+    # Technical issues 
+    'position_mismatch': 20,
+    'position_difference_moderate': 10,
+    'position_difference_large': 15,
+    'genotype_mismatch': 20,
+    'ref_alt_swap': 10
 }
 
-# REDESIGNED: Priority categories with clinical focus
-PRIORITY_CATEGORIES = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW']
+# Clinical significance change classification
+CLINICAL_CHANGE_TYPES = {
+    'pathogenic_benign_flip': [
+        'PATHOGENIC_TO_BENIGN', 'BENIGN_TO_PATHOGENIC',
+        'LIKELY_PATHOGENIC_TO_BENIGN', 'BENIGN_TO_LIKELY_PATHOGENIC',
+        'PATHOGENIC_TO_LIKELY_BENIGN', 'LIKELY_BENIGN_TO_PATHOGENIC'
+    ],
+    'pathogenic_vus_change': [
+        'PATHOGENIC_TO_VUS', 'VUS_TO_PATHOGENIC',
+        'LIKELY_PATHOGENIC_TO_VUS', 'VUS_TO_LIKELY_PATHOGENIC'
+    ],
+    'vus_benign_change': [
+        'VUS_TO_BENIGN', 'BENIGN_TO_VUS',
+        'VUS_TO_LIKELY_BENIGN', 'LIKELY_BENIGN_TO_VUS'
+    ],
+    'minor_clinical_changes': [
+        'PATHOGENIC_TO_LIKELY_PATHOGENIC', 'LIKELY_PATHOGENIC_TO_PATHOGENIC',
+        'BENIGN_TO_LIKELY_BENIGN', 'LIKELY_BENIGN_TO_BENIGN'
+    ]
+}
 
-# UPDATED: Category determination rules
+# Priority category determination rules
 PRIORITY_RULES = {
     'CRITICAL': {
-        'description': 'Clinical interpretation changes (PATHOGENIC↔BENIGN, VUS→PATHOGENIC) OR high impact transitions',
-        'condition': 'major_clinical_significance_changes OR high_impact_transitions'
-    },
-    'HIGH': {
-        'description': 'Functionally significant changes (impact transitions, other clinical changes, same transcript)',
-        'condition': 'moderate_impact_transitions OR other_clinical_changes OR same_transcript_changes'
+        'description': 'HGVS mismatches on priority transcript OR major clinical significance changes (Pathogenic↔Benign)',
+        'condition': 'priority_hgvs_mismatch OR pathogenic_benign_clinical_changes'
     },
     'MODERATE': {
-        'description': 'Pathogenicity prediction changes (SIFT/PolyPhen)',
-        'condition': 'pathogenicity_prediction_changes'
+        'description': 'Priority transcript unavailable OR moderate clinical changes OR serious functional differences',
+        'condition': 'transcript_matching_issues OR pathogenic_vus_changes OR consequence_differences'
     },
     'LOW': {
-        'description': 'Technical issues, annotation differences, and gene symbol changes',
-        'condition': 'annotation_differences OR liftover_technical_issues OR gene_symbol_changes'
+        'description': 'Minor changes (VUS-Benign, prediction changes, gene symbol differences)',
+        'condition': 'minor_clinical_changes OR prediction_changes OR annotation_differences'
+    },
+    'CONCORDANT': {
+        'description': 'Perfect priority transcript match with identical HGVS nomenclature',
+        'condition': 'same_priority_transcript AND identical_hgvs AND no_clinical_changes'
     }
+}
+
+# Legacy support - maintain backward compatibility where needed
+CLINICAL_OVERRIDE = {
+    'benign_reduction_factor': 0.1,   # Maintain existing benign variant handling
+    'pathogenic_boost_factor': 2.0    # Maintain existing pathogenic variant handling
 }

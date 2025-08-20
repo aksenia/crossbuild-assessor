@@ -52,10 +52,10 @@ import re
 # Import configuration
 from config.constants import VEP_CONSEQUENCE_IMPACT
 from config.scoring_config import (
-    IMPACT_TRANSITION_SCORES,
-    CLINICAL_OVERRIDE,
-    BASE_SCORES,
-    PRIORITY_CATEGORIES
+    CLINICAL_OVERRIDE,           # Keep: still used for benign/pathogenic handling
+    BASE_SCORES,                 # Keep: updated with new scoring
+    PRIORITY_CATEGORIES,         # Keep: updated to 4 categories
+    CLINICAL_CHANGE_TYPES        # New: for clinical evidence categorization
 )
 from config.visualization_config import (
     PLOT_COLORS,
@@ -199,7 +199,7 @@ def format_for_excel(df):
     # Enhanced transcript analysis with problematic transcript lists
     output_df['Gene_Annotation_Changes'] = df['gene_changes']
     output_df['Impact_Level_Changes'] = df['impact_changes']
-    output_df['Discordance_Summary'] = df['discordance_summary']
+    output_df['Discordance_Summary'] = df['score_breakdown']
     
     # Gene information
     output_df['Gene_hg19'] = df['hg19_gene'].fillna('')
@@ -332,7 +332,7 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg19_gene': 'Gene_hg19',
         'hg38_gene': 'Gene_hg38',
         'gene_changes': 'Gene_Changes',
-        'discordance_summary': 'Discordance_Summary',
+        'score_breakdown': 'Discordance_Summary',
         'hg19_clin_sig_normalized': 'Clinical_Significance_hg19',
         'hg38_clin_sig_normalized': 'Clinical_Significance_hg38',
         'clin_sig_change': 'Clinical_Change_Direction',
@@ -608,85 +608,78 @@ def create_summary_statistics(df_full, df_excel, output_dir):
         f.write("\n")
         
         # QUALITY RECOMMENDATIONS
-        f.write("CLINICAL WORKFLOW RECOMMENDATIONS:\n")
+        f.write("CROSSBUILD VARIANT COMPARISON:\n")
         f.write("-" * 35 + "\n")
         
         f.write("CRITICAL VARIANTS:\n")
-        f.write("• Clinical interpretation changes (hg19→hg38: PATHOGENIC↔BENIGN, VUS→PATHOGENIC)\n")
-        f.write("• High impact transitions affecting protein function\n")
-        f.write("• Immediate clinical review and potential validation recommended\n\n")
-        
-        f.write("HIGH PRIORITY VARIANTS:\n")
-        f.write("• Functionally significant impact transitions\n")
-        f.write("• Other clinical significance changes\n")
-        f.write("• Same transcript consequence changes\n")
-        f.write("• Priority review within clinical workflow\n\n")
+        f.write("• HGVS nomenclature mismatches on priority transcript (clinician #1 priority)\n")
+        f.write("• Major clinical significance changes (PATHOGENIC↔BENIGN)\n")
         
         f.write("MODERATE PRIORITY VARIANTS:\n")
-        f.write("• Pathogenicity prediction changes\n")
-        f.write("• Clinically relevant gene changes\n")
-        f.write("• Standard review process\n\n")
+        f.write("• Priority transcript unavailable in one build\n")
+        f.write("• Pathogenic↔VUS clinical significance changes\n")
+        f.write("• Serious functional consequence differences\n")
         
         f.write("LOW PRIORITY VARIANTS:\n")
+        f.write("• VUS↔Benign clinical significance changes\n")
+        f.write("• Pathogenicity prediction changes (SIFT/PolyPhen)\n")
+        f.write("• Gene symbol or impact level differences\n")
         f.write("• Technical liftover issues\n")
-        f.write("• Annotation differences between builds\n")
-        f.write("• Secondary review or automated filtering\n\n")
         
-        f.write("INVESTIGATE VARIANTS:\n")
-        f.write("• Unclear cases requiring investigation\n")
-        f.write("• Mixed evidence patterns\n")
-        f.write("• Case-by-case review\n\n")
+        f.write("CONCORDANT VARIANTS:\n")
+        f.write("• Perfect MANE transcript match with identical HGVS nomenclature\n")
+        f.write("• Consistent clinical annotations\n")
+        f.write("• No review required\n\n")
         
         # SCORING METHODOLOGY
         f.write("VARIANT DISCREPANCY SCORING METHODOLOGY:\n")
         f.write("-" * 45 + "\n")
-        f.write("CLINICAL EVIDENCE-FIRST PRIORITIZATION:\n")
-        f.write("Clinical significance changes drive prioritization over VEP annotation differences.\n")
-        f.write("Reduced weight for transcript mismatches (common annotation noise between builds).\n\n")
+        f.write("PRIORITY TRANSCRIPT-BASED PRIORITIZATION:\n")
+        f.write("HGVS concordance on priority transcript drives prioritization.\n")
+        f.write("MANE-first transcript selection ensures clinical standard compliance.\n")
+        f.write("VUS and missing data de-prioritized (less clinically actionable).\n\n")
         
-        f.write("PRIORITY CATEGORIES:\n")
-        f.write("• CRITICAL: Clinical interpretation changes (hg19→hg38: PATHOGENIC↔BENIGN, VUS→PATHOGENIC)\n")
-        f.write("            OR high impact transitions (HIGH↔MODERATE/LOW/MODIFIER)\n")
-        f.write("• HIGH: Functionally significant (moderate impact transitions, other clinical changes,\n")
-        f.write("        same transcript consequence changes)\n")
-        f.write("• MODERATE: Prediction changes (SIFT/PolyPhen) and clinically relevant gene changes\n")
-        f.write("• LOW: Technical issues (position/genotype) and annotation differences\n")
-        f.write("• INVESTIGATE: Unclear cases requiring further review\n\n")
+        f.write("PRIORITY CATEGORIES (4-Category System):\n")
+        f.write("• CRITICAL: HGVS mismatches on priority transcript (100+ points)\n")
+        f.write("            OR major clinical significance changes (Pathogenic↔Benign)\n")
+        f.write("• MODERATE: Priority transcript unavailable OR moderate clinical changes (60-99 points)\n")
+        f.write("• LOW: Minor changes and prediction differences (20-59 points)\n")
+        f.write("• CONCORDANT: Perfect priority transcript match with identical HGVS (0 points)\n\n")
         
-        f.write("CLINICAL EVIDENCE-FIRST SCORING WEIGHTS:\n")
-        f.write("• Clinical significance directional changes: +15-20 points (CRITICAL)\n")
-        f.write("• High impact transitions (HIGH involved): +15-20 points (CRITICAL)\n")
-        f.write("• Moderate impact transitions: +10-12 points (HIGH)\n")
-        f.write("• Same transcript consequence changes: +6 points (HIGH - demoted)\n")
-        f.write("• SIFT/PolyPhen changes: +5 points each (MODERATE)\n")
-        f.write("• Gene changes: Impact-weighted (+0.1-4 points, conditional)\n")
-        f.write("• Unmatched consequences: +1 point (LOW - demoted from +4)\n")
-        f.write("• Different transcripts: +0.5 points (LOW - demoted from +3)\n")
-        f.write("• Position/genotype issues: +2-3 points each (technical)\n\n")
+        f.write("PRIORITY TRANSCRIPT-BASED SCORING WEIGHTS:\n")
+        f.write("• HGVS nomenclature mismatch (HGVSc): +100 points (CRITICAL)\n")
+        f.write("• Pathogenic↔Benign clinical changes: +90 points (CRITICAL)\n")
+        f.write("• HGVS protein mismatch (HGVSp): +50 points (CRITICAL)\n")
+        f.write("• Priority transcript unavailable: +60 points (MODERATE)\n")
+        f.write("• Pathogenic↔VUS changes: +40 points (MODERATE)\n")
+        f.write("• Serious functional differences: +35 points (MODERATE)\n")
+        f.write("• VUS↔Benign changes: +25 points (LOW)\n")
+        f.write("• Gene/impact changes: +15 points each (LOW)\n")
+        f.write("• Prediction changes: +10 points each (LOW)\n")
+        f.write("• Missing clinical data: +5 points (minimal penalty)\n\n")
         
-        f.write("KEY CHANGES FROM PREVIOUS VERSION:\n")
-        f.write("• Clinical significance changes now highest priority (was secondary)\n")
-        f.write("• Unmatched consequences demoted from +4 to +1 (annotation noise)\n")
-        f.write("• Same transcript changes demoted from +10 to +6 (less critical than clinical)\n")
-        f.write("• Different transcripts demoted from +3 to +0.5 (minimal clinical impact)\n")
-        f.write("• Impact transitions weighted by clinical significance (HIGH > MODERATE > LOW)\n\n")
+        f.write("TRANSCRIPT SELECTION STRATEGY:\n")
+        f.write("• MANE Select transcripts (highest priority)\n")
+        f.write("• MANE Plus Clinical transcripts (fallback)\n")
+        f.write("• Canonical transcripts (when MANE unavailable)\n")
+        f.write("• First available matching transcript (last resort)\n")
+        f.write("• Same transcript used for comparison in both builds\n\n")
         
         f.write("CLINICAL EVIDENCE OVERRIDE:\n")
         f.write("• 90% score reduction for benign variants (LOW/MODIFIER + benign evidence)\n")
         f.write("• 2x score boost for pathogenic variants (HIGH impact or pathogenic evidence)\n")
-        f.write("• Falls back to impact/consequence changes when clinical data unavailable\n\n")
+        f.write("• Maintains clinical context while prioritizing HGVS concordance\n\n")
         
         f.write("RATIONALE:\n")
-        f.write("Clinical significance changes are rare but directly affect patient care decisions.\n")
-        f.write("VEP consequence mismatches are common but often represent annotation differences\n")
-        f.write("between genome builds rather than true functional changes. This redesign focuses\n")
-        f.write("clinical review effort on variants most likely to change clinical interpretation.\n\n")
+        f.write("HGVS nomenclature consistency is the top clinical priority for variant interpretation.\n")
+        f.write("Priority transcript approach ensures same transcript compared between builds.\n")
+        f.write("VUS-related changes de-prioritized as they are less clinically actionable.\n")
+        f.write("This approach focuses clinical review on variants most likely to affect patient care.\n\n")
         
         f.write("DATA PROCESSING NOTES:\n")
-        f.write("• All coordinates use VEP normalization (SNVs: original, Indels: original+1)\n")
-        f.write("• Clinical significance normalized to 8 categories (PATHOGENIC, BENIGN, VUS, etc.)\n")
-        f.write("• VEP analysis results cached for faster subsequent runs\n")
-        f.write("• Priority scores calculated fresh for easy recalibration\n")
+        f.write("• Priority transcript selected using MANE-first hierarchy\n")
+        f.write("• Clinical significance normalized to standard categories\n")
+        f.write("• Bounded scoring prevents category inflation\n")
 
     print(f"✓ Summary statistics saved to: {summary_file}")
 

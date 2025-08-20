@@ -4,6 +4,7 @@ Visualization configuration
 Colors, styles, and layout settings for all plots and visualizations.
 Colorblind-friendly palettes optimized for clinical review.
 """
+from config.scoring_config import PRIORITY_CATEGORIES
 
 # Colorblind-friendly color palettes
 PLOT_COLORS = {
@@ -113,15 +114,12 @@ PLOT_CONFIGS = {
         'show_counts': True
     },
 
-    'canonical_hgvsc_match': {
-        'title': 'CANONICAL HGVSc Match vs Clinical Changes\n(Stacked by Clinical Direction)',
-        'xlabel': 'CANONICAL HGVSc Match',
-        'ylabel': 'Variant Count',
-        'stacked': True,
-        'legend_position': (1.05, 1),
-        'legend_location': 'upper left',
-        'xticklabels': ['NO', 'YES'],
-        'rotation': 0
+    'hgvs_concordance_overview': {
+        'title': 'HGVS Concordance Overview\n(Priority Transcript Analysis)',
+        'xlabel': 'HGVS Concordance Status',
+        'ylabel': 'Percentage of Variants (%)',
+        'show_counts': True,
+        'show_percentages': True
     }
 }
 
@@ -162,4 +160,5 @@ CLINICAL_TRANSITION_ORDER = [
 ]
 
 # Update priority category order
-PRIORITY_CATEGORY_ORDER = ['CRITICAL', 'HIGH', 'MODERATE', 'LOW', 'CONCORDANT']  
+
+PRIORITY_CATEGORY_ORDER = PRIORITY_CATEGORIES

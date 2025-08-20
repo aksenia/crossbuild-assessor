@@ -8,6 +8,8 @@ liftover QC analysis and variant prioritization.
 import pandas as pd
 from datetime import datetime
 
+from config.scoring_config import PRIORITY_CATEGORIES
+
 
 class SummaryDataCalculator:
     """Calculate structured summary data from analysis results"""
@@ -265,7 +267,8 @@ class SummaryDataCalculator:
                     })
                 
                 # Sort by priority (CRITICAL first), then by count (descending)
-                priority_order = {'CRITICAL': 0, 'HIGH': 1, 'MODERATE': 2, 'LOW': 3}
+                # Create priority order from config (maintains order: CRITICAL, MODERATE, LOW, CONCORDANT)
+                priority_order = {category: index for index, category in enumerate(PRIORITY_CATEGORIES)}
                 directional_changes_list.sort(key=lambda x: (priority_order.get(x['clinical_priority'], 4), -x['count']))
                 
                 # Convert to dictionary for compatibility
