@@ -13,7 +13,6 @@ import pandas as pd
 from datetime import datetime
 from pathlib import Path
 from jinja2 import Template
-from data_utils import format_consequence_relationship
 
 
 class ReportGenerator:
@@ -216,19 +215,10 @@ class ReportGenerator:
                 # Select columns for clinical review
                 clinical_columns = [
                     'Rank', 'Chromosome', 'Position_hg19', 'Gene_hg19', 'Gene_hg38',
-                    'Clinical_Significance_hg19', 'Clinical_Significance_hg38',
-                    'Impact_hg19', 'Impact_hg38',
-                    'SIFT_hg19', 'SIFT_hg38', 'PolyPhen_hg19', 'PolyPhen_hg38',
-                    'Priority_Score', 'Priority_Category',
-                    'Consequence_Relationship', 'Consequence_Change',
-                    'High_Impact_Consequences_hg19', 'High_Impact_Consequences_hg38',
-                    # HGVS columns
-                    'CANONICAL_HGVSc_Match', 'HGVSc_MATCHED_concordant', 'HGVSc_MATCHED_discordant',
-                     # Canonical columns
-                    'canonical_hgvsc_concordant', 'canonical_hgvsc_discordant',
-                    'canonical_hgvsp_concordant', 'canonical_hgvsp_discordant',
-                    # HGVSp columns
-                    'CANONICAL_HGVSp_Match', 'HGVSp_MATCHED_concordant', 'HGVSp_MATCHED_discordant'
+                    'Priority_Score', 'Priority_Category', 'Discordance_Summary',
+                    'Priority_Transcript_CrossBuild', 'MANE_Flag_hg38', 'HGVS_c_hg19', 'HGVS_c_hg38', 
+                    'HGVS_p_hg19', 'HGVS_p_hg38', 'HGVS_c_Concordance', 'HGVS_p_Concordance',
+                    'Consequence_Relationship', 'Consequence_Change'
                 ]
                 
                 # Only include columns that exist
@@ -325,16 +315,16 @@ class ReportGenerator:
                     <div class="metric-label">Critical variants</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'top_variants_summary', 'clinical_changes_count']) }}</div>
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'clinical_transitions', 'total_changing']) }}</div>
                     <div class="metric-label">Clinical significance changes</div>
                 </div>
             </div>
             
             <div class="summary-text">
                 <strong>Key findings:</strong> 
-                {{ get_summary_value(['liftover', 'dataset_overview', 'position_match_percentage']) }}% of {{ get_summary_value(['liftover', 'dataset_overview', 'total_variants']) }} variants show coordinate concordance between liftover tools. 
-                {{ get_summary_value(['prioritization', 'top_variants_summary', 'critical_variants_distinct']) }} variants require immediate review due to functional or clinical significance changes.
-                {{ get_summary_value(['prioritization', 'top_variants_summary', 'clinical_changes_count']) }} variants show clinical significance transitions that may affect interpretation.
+                {{ get_summary_value(['prioritization', 'dataset_overview', 'total_discordant_variants']) }} discordant variants analyzed with {{ get_summary_value(['prioritization', 'dataset_overview', 'variants_in_excel_output']) }} variants included in Excel output.
+                {{ get_summary_value(['prioritization', 'top_variants_summary', 'critical_variants_distinct']) }} variants require immediate review.
+                {{ get_summary_value(['prioritization', 'clinical_transitions', 'total_changing']) }} variants show clinical significance changes that may affect interpretation.
             </div>
         </div>
 
@@ -420,52 +410,53 @@ class ReportGenerator:
         <div class="section">
             <h2>Variant build annotations comparison</h2>
             
-            <h3>Priority distribution</h3>
-            <div class="summary-text">
-                <strong>Priority definitions:</strong>
-                <strong>CRITICAL:</strong> Clinical interpretation changes or high impact transitions |
-                <strong>HIGH:</strong> Functionally significant changes |
-                <strong>MODERATE:</strong> Pathogenicity prediction changes |
-                <strong>LOW:</strong> Technical issues, annotation differences, and gene symbol changes
+        <h3>Priority distribution</h3>
+        <div class="summary-text">
+            <strong>Priority definitions (4-Category System):</strong>
+            <strong>CRITICAL:</strong> HGVS mismatches on priority transcript OR major clinical significance changes (Pathogenic↔Benign) |
+            <strong>MODERATE:</strong> Priority transcript unavailable OR moderate clinical changes OR serious functional differences |
+            <strong>LOW:</strong> Minor changes (VUS-Benign, prediction changes, gene symbol differences) |
+            <strong>CONCORDANT:</strong> Perfect priority transcript match with identical HGVS nomenclature
+        </div>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value">{{ get_summary_value(['prioritization', 'priority_distribution', 'CRITICAL'], 0) }}</div>
+                <div class="metric-label">CRITICAL priority</div>
             </div>
-            <div class="metrics-grid">
-                {% for category, count in get_summary_value(['prioritization', 'priority_distribution']).items() %}
-                <div class="metric-card">
-                    <div class="metric-value">{{ count }}</div>
-                    <div class="metric-label">{{ category }} priority</div>
-                </div>
-                {% endfor %}
+            <div class="metric-card">
+                <div class="metric-value">{{ get_summary_value(['prioritization', 'priority_distribution', 'MODERATE'], 0) }}</div>
+                <div class="metric-label">MODERATE priority</div>
             </div>
+            <div class="metric-card">
+                <div class="metric-value">{{ get_summary_value(['prioritization', 'priority_distribution', 'LOW'], 0) }}</div>
+                <div class="metric-label">LOW priority</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">{{ get_summary_value(['prioritization', 'priority_distribution', 'CONCORDANT'], 0) }}</div>
+                <div class="metric-label">CONCORDANT</div>
+            </div>
+        </div>
 
-            <!-- HGVS NOMENCLATURE ANALYSIS (UPDATED) -->
-            <h3>HGVS nomenclature analysis</h3>
+            <!-- PRIORITY TRANSCRIPT HGVS ANALYSIS -->
+            <h3>Priority transcript HGVS concordance</h3>
             <div class="metrics-grid">
                 <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'canonical_hgvsc_match', 'match_rate_percentage']) }}%</div>
-                    <div class="metric-label">Canonical HGVSc Match Rate</div>
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'priority_transcript_analysis', 'hgvsc_concordance_rate'], 'N/A') }}%</div>
+                    <div class="metric-label">Priority HGVSc Concordance</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'canonical_hgvsp_match', 'match_rate_percentage']) }}%</div>
-                    <div class="metric-label">Canonical HGVSp Match Rate</div>
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'priority_transcript_analysis', 'hgvsp_concordance_rate'], 'N/A') }}%</div>
+                    <div class="metric-label">Priority HGVSp Concordance</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsc_concordance', 'concordant_rate_percentage']) }}%</div>
-                    <div class="metric-label">HGVSc Concordance Rate</div>
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'priority_transcript_analysis', 'mane_select_both_builds'], 'N/A') }}</div>
+                    <div class="metric-label">MANE Select Both Builds</div>
                 </div>
                 <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'hgvsp_concordance', 'concordant_rate_percentage']) }}%</div>
-                    <div class="metric-label">HGVSp Concordance Rate</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'matched_transcripts', 'hgvsc_average_per_variant']) }}</div>
-                    <div class="metric-label">Avg HGVSc-Matched Transcripts</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'hgvs_analysis', 'matched_transcripts', 'hgvsp_average_per_variant']) }}</div>
-                    <div class="metric-label">Avg HGVSp-Matched Transcripts</div>
+                    <div class="metric-value">{{ get_summary_value(['prioritization', 'priority_transcript_analysis', 'mane_hg38_only'], 'N/A') }}</div>
+                    <div class="metric-label">MANE hg38 Only</div>
                 </div>
             </div>
-
             <!-- CLINICAL SIGNIFICANCE TRANSITIONS -->
             <h3>Clinical significance transitions (hg19→hg38)</h3>
             <div class="metrics-grid">
@@ -562,12 +553,12 @@ class ReportGenerator:
                             <th>Priority</th>
                             <th>Location</th>
                             <th>Gene (hg19/hg38)</th>
-                            <th>HGVSc Matches</th>
-                            <th>Clinical significance</th>
-                            <th>Impact level</th>
+                            <th>Priority Transcript HGVS</th>
+                            <th>Score Breakdown</th>
                             <th>Consequence Relationship</th>
                         </tr>
                     </thead>
+                    <tbody>
                     <tbody>
                         {% for variant in top_variants %}
                         <tr>
@@ -584,12 +575,9 @@ class ReportGenerator:
                                 {% endif %}
                             </td>
                             <td>{{ variant.get('Chromosome', 'N/A') }}:{{ variant.get('Position_hg19', 'N/A') }}</td>
-                            <!-- Gene hg19/hg38 concatenated  -->
                             <td>
                                 {% set gene_hg19_raw = variant.get('Gene_hg19', 'N/A') %}
                                 {% set gene_hg38_raw = variant.get('Gene_hg38', 'N/A') %}
-                                
-                                {# Normalize NaN and empty values #}
                                 {% set gene_hg19 = 'N/A' if gene_hg19_raw | string == 'nan' or gene_hg19_raw == '' else gene_hg19_raw %}
                                 {% set gene_hg38 = 'N/A' if gene_hg38_raw | string == 'nan' or gene_hg38_raw == '' else gene_hg38_raw %}
                                 
@@ -599,212 +587,42 @@ class ReportGenerator:
                                     <span class="clinical-change">{{ gene_hg19 }} → {{ gene_hg38 }}</span>
                                 {% endif %}
                             </td>
-                            <!-- HGVS Matches with HGVSp priority + grouping + clear labeling -->
-                            <td style="font-size: 10px; max-width: 250px; vertical-align: top; line-height: 1.2;">
-                                {% set hgvsc_concordant_raw = variant.get('HGVSc_MATCHED_concordant', '') %}
-                                {% set hgvsc_discordant_raw = variant.get('HGVSc_MATCHED_discordant', '') %}
-                                {% set hgvsp_concordant_raw = variant.get('HGVSp_MATCHED_concordant', '') %}
-                                {% set hgvsp_discordant_raw = variant.get('HGVSp_MATCHED_discordant', '') %}
+                            <td style="font-size: 11px;">
+                                {% set transcript_id = variant.get('Priority_Transcript_CrossBuild', 'N/A') %}
+                                {% set mane_flag = variant.get('MANE_Flag_hg38', '') %}
                                 
-                                {# Convert to string and handle NaN/float values #}
-                                {% set hgvsc_concordant = hgvsc_concordant_raw | string if hgvsc_concordant_raw is not none else '' %}
-                                {% set hgvsc_discordant = hgvsc_discordant_raw | string if hgvsc_discordant_raw is not none else '' %}
-                                {% set hgvsp_concordant = hgvsp_concordant_raw | string if hgvsp_concordant_raw is not none else '' %}
-                                {% set hgvsp_discordant = hgvsp_discordant_raw | string if hgvsp_discordant_raw is not none else '' %}
-                                
-                                {# Clean up values #}
-                                {% set hgvsc_concordant = '' if hgvsc_concordant in ['', '-', 'nan'] else hgvsc_concordant %}
-                                {% set hgvsc_discordant = '' if hgvsc_discordant in ['', '-', 'nan'] else hgvsc_discordant %}
-                                {% set hgvsp_concordant = '' if hgvsp_concordant in ['', '-', 'nan'] else hgvsp_concordant %}
-                                {% set hgvsp_discordant = '' if hgvsp_discordant in ['', '-', 'nan'] else hgvsp_discordant %}
-                                
-                                {# Parse HGVSc lists for summary #}
-                                {% set hgvsc_concordant_items = [] %}
-                                {% set hgvsc_discordant_items = [] %}
-                                
-                                {% if hgvsc_concordant %}
-                                    {% for item in hgvsc_concordant.replace(';', ',').split(',') %}
-                                        {% set clean_item = item.strip() %}
-                                        {% if clean_item and clean_item != '' %}
-                                            {% set _ = hgvsc_concordant_items.append(clean_item) %}
-                                        {% endif %}
-                                    {% endfor %}
+                                <strong>Transcript:</strong> 
+                                {{ transcript_id }}
+                                {% if mane_flag and mane_flag != 'N/A' and mane_flag != '' %}
+                                    <span style="color: #2c5f8a; font-weight: bold;">({{ mane_flag }})</span>
                                 {% endif %}
+                                <br>
                                 
-                                {% if hgvsc_discordant %}
-                                    {% for item in hgvsc_discordant.replace(';', ',').split(',') %}
-                                        {% set clean_item = item.strip() %}
-                                        {% if clean_item and clean_item != '' %}
-                                            {% set _ = hgvsc_discordant_items.append(clean_item) %}
-                                        {% endif %}
-                                    {% endfor %}
-                                {% endif %}
+                                {% set hgvsc_hg19 = variant.get('HGVS_c_hg19', 'N/A') %}
+                                {% set hgvsc_hg38 = variant.get('HGVS_c_hg38', 'N/A') %}
                                 
-                                {# Parse HGVSp lists for details #}
-                                {% set hgvsp_concordant_items = [] %}
-                                {% set hgvsp_discordant_items = [] %}
-                                
-                                {% if hgvsp_concordant %}
-                                    {% for item in hgvsp_concordant.replace(';', ',').split(',') %}
-                                        {% set clean_item = item.strip() %}
-                                        {% if clean_item and clean_item != '' %}
-                                            {% set _ = hgvsp_concordant_items.append(clean_item) %}
-                                        {% endif %}
-                                    {% endfor %}
-                                {% endif %}
-                                
-                                {% if hgvsp_discordant %}
-                                    {% for item in hgvsp_discordant.replace(';', ',').split(',') %}
-                                        {% set clean_item = item.strip() %}
-                                        {% if clean_item and clean_item != '' %}
-                                            {% set _ = hgvsp_discordant_items.append(clean_item) %}
-                                        {% endif %}
-                                    {% endfor %}
-                                {% endif %}
-                                
-                                {# Get canonical counts using actual available data #}
-                                {% set canonical_concordant_raw = variant.get('canonical_hgvsc_concordant', '') %}
-                                {% set canonical_discordant_raw = variant.get('canonical_hgvsc_discordant', '') %}
-                                {% set canonical_concordant = canonical_concordant_raw | string if canonical_concordant_raw is not none else '' %}
-                                {% set canonical_discordant = canonical_discordant_raw | string if canonical_discordant_raw is not none else '' %}
-                                {% set canonical_concordant = '' if canonical_concordant in ['', '-', 'nan'] else canonical_concordant %}
-                                {% set canonical_discordant = '' if canonical_discordant in ['', '-', 'nan'] else canonical_discordant %}
-                                {% set canonical_concordant_count = canonical_concordant.split(';') | length if canonical_concordant else 0 %}
-                                {% set canonical_discordant_count = canonical_discordant.split(';') | length if canonical_discordant else 0 %}
-                                
-                                {# Separate canonical vs other for details display #}
-                                {% set hgvsp_discordant_canonical = [] %}
-                                {% set hgvsp_discordant_other = [] %}
-                                {% set hgvsc_discordant_canonical = [] %}
-                                {% set hgvsc_discordant_other = [] %}
-                                
-                                {% for item in hgvsp_discordant_items %}
-                                    {% if 'NM_' in item %}
-                                        {% set _ = hgvsp_discordant_canonical.append(item) %}
-                                    {% else %}
-                                        {% set _ = hgvsp_discordant_other.append(item) %}
-                                    {% endif %}
-                                {% endfor %}
-                                
-                                {% for item in hgvsc_discordant_items %}
-                                    {% if 'NM_' in item %}
-                                        {% set _ = hgvsc_discordant_canonical.append(item) %}
-                                    {% else %}
-                                        {% set _ = hgvsc_discordant_other.append(item) %}
-                                    {% endif %}
-                                {% endfor %}
-                                
-                                {# Group HGVSp canonical by identical HGVS changes #}
-                                {% set grouped_hgvsp_canonical = {} %}
-                                {% for item in hgvsp_discordant_canonical %}
-                                    {% if '(' in item %}
-                                        {% set tx_id = item.split('(')[0].strip() %}
-                                        {% set hgvs_part = '(' + item.split('(')[1] %}
-                                        {% if hgvs_part in grouped_hgvsp_canonical %}
-                                            {% set current_txs = grouped_hgvsp_canonical[hgvs_part] %}
-                                            {% set _ = grouped_hgvsp_canonical.update({hgvs_part: current_txs + ', ' + tx_id}) %}
-                                        {% else %}
-                                            {% set _ = grouped_hgvsp_canonical.update({hgvs_part: tx_id}) %}
-                                        {% endif %}
-                                    {% else %}
-                                        {% set _ = grouped_hgvsp_canonical.update({item: item}) %}
-                                    {% endif %}
-                                {% endfor %}
-                                
-                                {# Group HGVSc canonical by identical HGVS changes #}
-                                {% set grouped_hgvsc_canonical = {} %}
-                                {% for item in hgvsc_discordant_canonical %}
-                                    {% if '(' in item %}
-                                        {% set tx_id = item.split('(')[0].strip() %}
-                                        {% set hgvs_part = '(' + item.split('(')[1] %}
-                                        {% if hgvs_part in grouped_hgvsc_canonical %}
-                                            {% set current_txs = grouped_hgvsc_canonical[hgvs_part] %}
-                                            {% set _ = grouped_hgvsc_canonical.update({hgvs_part: current_txs + ', ' + tx_id}) %}
-                                        {% else %}
-                                            {% set _ = grouped_hgvsc_canonical.update({hgvs_part: tx_id}) %}
-                                        {% endif %}
-                                    {% else %}
-                                        {% set _ = grouped_hgvsc_canonical.update({item: item}) %}
-                                    {% endif %}
-                                {% endfor %}
-                                
-                                {% if hgvsc_concordant_items or hgvsc_discordant_items %}
-                                    <div class="{% if hgvsc_discordant_items %}clinical-change{% else %}clinical-stable{% endif %}">
-                                        {# Simplified HGVSc Summary without total transcript counts #}
-                                        <strong>Summary:</strong> {{ hgvsc_concordant_items | length }} concordant ({{ canonical_concordant_count }} canonical), {{ hgvsc_discordant_items | length }} discordant ({{ canonical_discordant_count }} canonical)<br><br>
-                                        
-                                        {# Details: HGVSp first (protein-level priority) with grouping #}
-                                        {% if grouped_hgvsp_canonical %}
-                                            <strong style="color: #c62828;">Discordant HGVSp:</strong><br>
-                                            {% for hgvs_part, tx_list in grouped_hgvsp_canonical.items() %}
-                                                <div style="margin-left: 4px; margin-top: 2px;">
-                                                    <span style="white-space: nowrap; font-weight: bold;">{{ tx_list }}</span><br>
-                                                    <span style="margin-left: 8px; word-break: break-all;">{{ hgvs_part | replace('→', '<br>&nbsp;&nbsp;&nbsp;&nbsp;→') | safe }}</span>
-                                                </div>
-                                            {% endfor %}
-                                            <br>
-                                        {% elif grouped_hgvsc_canonical %}
-                                            {# Fallback to HGVSc when no HGVSp available - with grouping #}
-                                            <strong style="color: #c62828;">Discordant HGVSc:</strong><br>
-                                            {% for hgvs_part, tx_list in grouped_hgvsc_canonical.items() %}
-                                                <div style="margin-left: 4px; margin-top: 2px;">
-                                                    <span style="white-space: nowrap; font-weight: bold;">{{ tx_list }}</span><br>
-                                                    <span style="margin-left: 8px; word-break: break-all;">{{ hgvs_part | replace('→', '<br>&nbsp;&nbsp;&nbsp;&nbsp;→') | safe }}</span>
-                                                </div>
-                                            {% endfor %}
-                                            <br>
-                                        {% endif %}
-                                        
-                                        {# Show other discordant if no canonical shown #}
-                                        {% if not grouped_hgvsp_canonical and not grouped_hgvsc_canonical %}
-                                            {% if hgvsp_discordant_other %}
-                                                <strong style="color: #c62828;">Discordant HGVSp (Other, top 3):</strong><br>
-                                                {% for item in hgvsp_discordant_other[:3] %}
-                                                    <div style="margin-left: 4px; margin-top: 2px;">
-                                                        {% if item | length > 60 %}
-                                                            <span style="word-break: break-all;">{{ item[:60] }}...</span>
-                                                        {% else %}
-                                                            <span style="word-break: break-all;">{{ item }}</span>
-                                                        {% endif %}
-                                                    </div>
-                                                {% endfor %}
-                                            {% elif hgvsc_discordant_other %}
-                                                <strong style="color: #c62828;">Discordant HGVSc (Other, top 3):</strong><br>
-                                                {% for item in hgvsc_discordant_other[:3] %}
-                                                    <div style="margin-left: 4px; margin-top: 2px;">
-                                                        {% if item | length > 60 %}
-                                                            <span style="word-break: break-all;">{{ item[:60] }}...</span>
-                                                        {% else %}
-                                                            <span style="word-break: break-all;">{{ item }}</span>
-                                                        {% endif %}
-                                                    </div>
-                                                {% endfor %}
-                                            {% endif %}
-                                        {% endif %}
-                                    </div>
+                                <strong>HGVSc:</strong> 
+                                {% if hgvsc_hg19 == hgvsc_hg38 %}
+                                    {{ hgvsc_hg19 }}
                                 {% else %}
-                                    N/A
+                                    <span class="clinical-change">{{ hgvsc_hg19 }} → {{ hgvsc_hg38 }}</span>
+                                {% endif %}
+                                <br>
+                                
+                                {% set hgvsp_hg19 = variant.get('HGVS_p_hg19', 'N/A') %}
+                                {% set hgvsp_hg38 = variant.get('HGVS_p_hg38', 'N/A') %}
+                                
+                                {% if hgvsp_hg19 != 'N/A' or hgvsp_hg38 != 'N/A' %}
+                                    <strong>HGVSp:</strong> 
+                                    {% if hgvsp_hg19 == hgvsp_hg38 %}
+                                        {{ hgvsp_hg19 }}
+                                    {% else %}
+                                        <span class="clinical-change">{{ hgvsp_hg19 }} → {{ hgvsp_hg38 }}</span>
+                                    {% endif %}
                                 {% endif %}
                             </td>
-                            <!-- Clinical significance column -->
-                            <td>
-                                {% set hg19_clin = variant.get('Clinical_Significance_hg19', 'N/A') %}
-                                {% set hg38_clin = variant.get('Clinical_Significance_hg38', 'N/A') %}
-                                {% if hg19_clin != hg38_clin %}
-                                    <span class="clinical-change">{{ hg19_clin }} → {{ hg38_clin }}</span>
-                                {% else %}
-                                    <span class="clinical-stable">{{ hg19_clin }}</span>
-                                {% endif %}
-                            </td>
-                            <!-- Impact level column -->
-                            <td>
-                                {% set hg19_impact = variant.get('Impact_hg19', 'N/A') %}
-                                {% set hg38_impact = variant.get('Impact_hg38', 'N/A') %}
-                                {% if hg19_impact != hg38_impact %}
-                                    <span class="clinical-change">{{ hg19_impact }} → {{ hg38_impact }}</span>
-                                {% else %}
-                                    <span class="clinical-stable">{{ hg19_impact }}</span>
-                                {% endif %}
+                            <td style="font-size: 10px; max-width: 250px;">
+                                {{ variant.get('score_breakdown', variant.get('Discordance_Summary', 'N/A')) }}
                             </td>
                             <td>
                                 {{ format_consequence_relationship(variant) }}
@@ -873,9 +691,8 @@ class ReportGenerator:
         <div class="section">
             <h2>Technical Notes</h2>
             <div class="summary-text">
-                <p><strong>Coordinate system:</strong> All coordinates use VEP normalization (SNVs: original position, Indels: original position + 1)</p>
-                <p><strong>Evidence-first scoring:</strong> Prioritizes clinical significance changes over annotation differences between builds</p>
-                <p><strong>Priority categories:</strong> CRITICAL (immediate review) → HIGH (priority review) → MODERATE (standard review) → LOW (secondary review)</p>
+                <p><strong>Priority transcript-based scoring:</strong> HGVS concordance on priority transcript drives prioritization, using MANE-first transcript selection</p>
+                <p><strong>Priority categories:</strong> CRITICAL (immediate review) → MODERATE (standard review) → LOW (secondary review) → CONCORDANT (no review needed)</p>
                 <p><strong>Quality control:</strong> Liftover concordance analysis compares CrossMap and bcftools coordinate conversion results</p>
                 <p><strong>For complete details:</strong> Refer to the accompanying summary text files and CSV output for comprehensive analysis results.</p>
             </div>

@@ -383,11 +383,51 @@ class SummaryDataCalculator:
                 }
             }
 
-        # HGVS analysis - TODO: Implement MANE-based HGVS analysis after Phase 2
-        hgvs_analysis = {
-            'status': 'removed_pending_mane_implementation'
-        }
-
+        # Priority transcript HGVS analysis  
+        hgvs_analysis = {}
+        if len(df_full) > 0 and 'priority_hgvsc_concordance' in df_full.columns:
+            total_variants = len(df_full)
+            
+            # HGVSc concordance rates
+            hgvsc_match = (df_full['priority_hgvsc_concordance'] == 'Match').sum()
+            hgvsc_mismatch = (df_full['priority_hgvsc_concordance'] == 'Mismatch').sum()
+            hgvsc_no_analysis = (df_full['priority_hgvsc_concordance'] == 'No_Analysis').sum()
+            
+            # HGVSp concordance rates  
+            hgvsp_match = (df_full['priority_hgvsp_concordance'] == 'Match').sum()
+            hgvsp_mismatch = (df_full['priority_hgvsp_concordance'] == 'Mismatch').sum()
+            hgvsp_no_analysis = (df_full['priority_hgvsp_concordance'] == 'No_Analysis').sum()
+            
+            # MANE transcript availability
+            mane_select_both = (df_full['transcript_crossbuild_status'] == 'MANE_Select_Both_Builds').sum()
+            mane_plus_clinical_both = (df_full['transcript_crossbuild_status'] == 'MANE_Plus_Clinical_Both_Builds').sum()
+            mane_hg38_only = (df_full['transcript_crossbuild_status'] == 'MANE_hg38_Only').sum()
+            canonical_fallback_both = (df_full['transcript_crossbuild_status'] == 'Canonical_Fallback_Both_Builds').sum()
+            no_matching_transcripts = (df_full['transcript_crossbuild_status'] == 'No_Matching_Transcripts').sum()
+            no_transcripts = (df_full['transcript_crossbuild_status'] == 'No_Transcripts').sum()
+            
+            hgvs_analysis = {
+                'priority_transcript_analysis': {
+                    'hgvsc_concordance_rate': round((hgvsc_match / total_variants) * 100, 1),
+                    'hgvsp_concordance_rate': round((hgvsp_match / total_variants) * 100, 1),
+                    'hgvsc_match_count': hgvsc_match,
+                    'hgvsc_mismatch_count': hgvsc_mismatch,
+                    'hgvsc_no_analysis_count': hgvsc_no_analysis,
+                    'hgvsp_match_count': hgvsp_match,
+                    'hgvsp_mismatch_count': hgvsp_mismatch,
+                    'hgvsp_no_analysis_count': hgvsp_no_analysis,
+                    'mane_select_both_builds': mane_select_both,
+                    'mane_plus_clinical_both_builds': mane_plus_clinical_both,
+                    'mane_hg38_only': mane_hg38_only,
+                    'canonical_fallback_both_builds': canonical_fallback_both,
+                    'no_matching_transcripts': no_matching_transcripts,
+                    'no_transcripts': no_transcripts
+                }
+            }
+        else:
+            hgvs_analysis = {
+                'status': 'columns_not_available_in_dataframe'
+            }
 
         # Functional discordances
         functional_discordances = {}
@@ -438,6 +478,7 @@ class SummaryDataCalculator:
             "impact_transitions": impact_transitions,
             "clinical_coverage": clinical_coverage,
             "hgvs_analysis": hgvs_analysis,
+            "priority_transcript_analysis": hgvs_analysis.get('priority_transcript_analysis', {}),  # Add as top-level
             "functional_discordances": functional_discordances,
             "top_variants_summary": top_variants_summary
         }
