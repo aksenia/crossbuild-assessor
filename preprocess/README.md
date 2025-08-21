@@ -107,4 +107,14 @@ docker run --rm -it crossbuild python build_command.py --data $(pwd)/data/sample
 
 This pipeline is as good as its most fiddly tool which is unequivocally `bcftools`. It may fail on your vcf file due to formatting, so if you make sure `bcftools +liftover` works on you input vcf - the rest of the pipeline will most likely work. 
 
-You can test it by directly calling `bcftools +liftover` from the container or by running a targeted rule (see above). 
+You can test it by directly calling `bcftools +liftover` from the container or by running a targeted rule (see above).
+
+## Example
+
+See `clivar-small.vcf` for a tiny input vcf for testing the setup and expected output files:
+
+- clinvar-small_comparison.tsv: liftover merged summary
+- clinvar-small.vep.hg19.txt - VEP output hg19
+- clinvar-small.vep.hg38.txt - VEP output hg38
+
+These files can be used as an input to the crossbuilder-assessor toolkit (see main doc).
