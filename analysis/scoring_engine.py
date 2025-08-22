@@ -27,12 +27,24 @@ class ClinicalScorer:
         self.clinical_types = CLINICAL_CHANGE_TYPES
         self.clinical_override = CLINICAL_OVERRIDE
 
-    def assign_priority_category(self, score):
-        """Assign category based on score thresholds from config"""
+    def assign_priority_category(self, score, score_details):
+        """Assign category based on score thresholds with strict CONCORDANT criteria"""
+        
+        # STRICT CONCORDANT: Only gene annotation differences allowed
+        if score == 0:
+            return 'CONCORDANT'
+        elif score <= self.base_scores['gene_changes']:
+            # Check if ONLY gene changes contributed to the score
+            gene_only = all('gene changes' in detail.lower() for detail in score_details if detail)
+            if gene_only:
+                return 'CONCORDANT'
+        
+        # Regular thresholds for other categories
         for category in ['CRITICAL', 'MODERATE', 'LOW']:
             if score >= self.thresholds[category]:
                 return category
-        return 'CONCORDANT'
+        
+        return 'LOW'  # Fallback for edge cases
  
     def calculate_scores_from_analysis(self, vep_analysis_df):
         """Calculate priority scores using priority transcript approach"""
@@ -44,21 +56,35 @@ class ClinicalScorer:
             # Initialize scoring
             priority_score = 0
             score_details = []
+
+            # ===== TRANSCRIPT MATCHING ISSUES =====
+            transcript_status = row.get('transcript_crossbuild_status', '')
+            if transcript_status == 'MANE_hg38_Only':
+                priority_score += self.base_scores['transcript_mismatch']
+                score_details.append(f"Transcript mismatch ({self.base_scores['transcript_mismatch']})")
+            elif transcript_status == 'No_Matching_Transcripts':
+                priority_score += self.base_scores['no_matching_transcripts']
+                score_details.append(f"No matching transcripts ({self.base_scores['no_matching_transcripts']})")
+            elif transcript_status == 'No_Transcripts':
+                priority_score += self.base_scores['no_transcripts']
+                score_details.append(f"No transcripts ({self.base_scores['no_transcripts']})")
             
             # ===== CRITICAL PRIORITY: HGVS concordance on priority transcript =====
-            if row.get('priority_hgvsc_concordance') == 'Mismatch':
-                priority_score += self.base_scores['priority_hgvsc_mismatch']
-                score_details.append(f"HGVSc mismatch ({self.base_scores['priority_hgvsc_mismatch']})")
-            elif row.get('priority_hgvsc_concordance') == 'No_Analysis':
-                priority_score += self.base_scores['missing_hgvs_data']
-                score_details.append(f"Missing HGVSc data ({self.base_scores['missing_hgvs_data']})")
-            
-            if row.get('priority_hgvsp_concordance') == 'Mismatch':
-                priority_score += self.base_scores['priority_hgvsp_mismatch']
-                score_details.append(f"HGVSp mismatch ({self.base_scores['priority_hgvsp_mismatch']})")
-            elif row.get('priority_hgvsp_concordance') == 'No_Analysis':
-                priority_score += self.base_scores['missing_hgvs_data']
-                score_details.append(f"Missing HGVSp data ({self.base_scores['missing_hgvs_data']})")
+            # Only score HGVS issues if we actually have transcripts to analyze
+            if transcript_status not in ['No_Matching_Transcripts', 'No_Transcripts']:
+                if row.get('priority_hgvsc_concordance') == 'Mismatch':
+                    priority_score += self.base_scores['priority_hgvsc_mismatch']
+                    score_details.append(f"HGVSc mismatch ({self.base_scores['priority_hgvsc_mismatch']})")
+                elif row.get('priority_hgvsc_concordance') == 'No_Analysis':
+                    priority_score += self.base_scores['missing_hgvs_data']
+                    score_details.append(f"Missing HGVSc data ({self.base_scores['missing_hgvs_data']})")
+                
+                if row.get('priority_hgvsp_concordance') == 'Mismatch':
+                    priority_score += self.base_scores['priority_hgvsp_mismatch']
+                    score_details.append(f"HGVSp mismatch ({self.base_scores['priority_hgvsp_mismatch']})")
+                elif row.get('priority_hgvsp_concordance') == 'No_Analysis':
+                    priority_score += self.base_scores['missing_hgvs_data']
+                    score_details.append(f"Missing HGVSp data ({self.base_scores['missing_hgvs_data']})")
             
             # ===== CLINICAL SIGNIFICANCE CHANGES =====
             clin_change = str(row.get('clin_sig_change', ''))
@@ -77,15 +103,6 @@ class ClinicalScorer:
             elif clin_change == 'NONE' or clin_change.startswith('STABLE_NONE'):
                 priority_score += self.base_scores['missing_clinical_data']
                 score_details.append(f"Missing clinical data ({self.base_scores['missing_clinical_data']})")
-            
-            # ===== TRANSCRIPT MATCHING ISSUES =====
-            transcript_status = row.get('transcript_crossbuild_status', '')
-            if transcript_status in ['MANE_hg38_Only', 'No_Matching_Transcripts']:
-                priority_score += self.base_scores['transcript_mismatch']
-                score_details.append(f"Transcript mismatch ({self.base_scores['transcript_mismatch']})")
-            elif transcript_status == 'No_Transcripts':
-                priority_score += self.base_scores['missing_clinical_data']
-                score_details.append(f"No transcripts ({self.base_scores['missing_clinical_data']})")
             
             # ===== WORST CONSEQUENCE DIFFERENCES =====
             if row.get('has_worst_consequence_difference') == 'YES':
@@ -174,7 +191,8 @@ class ClinicalScorer:
                 score_details.append("Pathogenic evidence boost (×2.0)")
             
             # ===== ASSIGN PRIORITY CATEGORY BASED ON SCORE THRESHOLDS =====
-            priority_category = self.assign_priority_category(priority_score)
+            priority_category = self.assign_priority_category(priority_score, score_details)
+
             
             # ===== CREATE VARIANT RECORD =====
             variant_info = row.to_dict()

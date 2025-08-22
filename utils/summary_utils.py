@@ -348,10 +348,10 @@ class SummaryDataCalculator:
                            (df_full['hg38_clin_sig_normalized'] != 'NONE')).sum()
             
             # Pathogenicity predictions - properly exclude missing values including "-"
-            has_sift_hg19 = (df_full['hg19_sift'] != '') & (df_full['hg19_sift'] != '-') & (df_full['hg19_sift'].notna())
-            has_sift_hg38 = (df_full['hg38_sift'] != '') & (df_full['hg38_sift'] != '-') & (df_full['hg38_sift'].notna())
-            has_polyphen_hg19 = (df_full['hg19_polyphen'] != '') & (df_full['hg19_polyphen'] != '-') & (df_full['hg19_polyphen'].notna())
-            has_polyphen_hg38 = (df_full['hg38_polyphen'] != '') & (df_full['hg38_polyphen'] != '-') & (df_full['hg38_polyphen'].notna())
+            has_sift_hg19 = (df_full['hg19_sift'] != 'NONE') & (df_full['hg19_sift'] != '-') & (df_full['hg19_sift'].notna())
+            has_sift_hg38 = (df_full['hg38_sift'] != 'NONE') & (df_full['hg38_sift'] != '-') & (df_full['hg38_sift'].notna())
+            has_polyphen_hg19 = (df_full['hg19_polyphen'] != 'NONE') & (df_full['hg19_polyphen'] != '-') & (df_full['hg19_polyphen'].notna())
+            has_polyphen_hg38 = (df_full['hg38_polyphen'] != 'NONE') & (df_full['hg38_polyphen'] != '-') & (df_full['hg38_polyphen'].notna())
             
             has_sift_any = has_sift_hg19 | has_sift_hg38
             has_polyphen_any = has_polyphen_hg19 | has_polyphen_hg38

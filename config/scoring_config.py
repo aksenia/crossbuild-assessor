@@ -29,6 +29,8 @@ BASE_SCORES = {
     
     # MODERATE (60-99 points) - Moderate clinical concern
     'transcript_mismatch': 60,                # No priority transcript in one build
+    'no_matching_transcripts': 30,            # No transcripts match between builds (lower penalty)
+    'no_transcripts': 20,                     # No transcript data available (technical issue)
     'pathogenic_vus_change': 40,              # P↔VUS, LP↔VUS (some uncertainty)
     'serious_consequence_difference': 35,      # HIGH→MODERATE impact changes
     
