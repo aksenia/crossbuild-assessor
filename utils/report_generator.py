@@ -591,15 +591,22 @@ class ReportGenerator:
                                 {% set transcript_id = variant.get('Priority_Transcript_CrossBuild', 'N/A') %}
                                 {% set mane_flag = variant.get('MANE_Flag_hg38', '') %}
                                 
+                                {# Normalize values to handle nan, None, empty strings #}
+                                {% set transcript_clean = 'N/A' if transcript_id in ['NONE', 'nan', None, ''] or transcript_id|string == 'nan' else transcript_id %}
+                                {% set mane_clean = '' if mane_flag in ['nan', None, ''] or mane_flag|string == 'nan' else mane_flag %}
+                                
                                 <strong>Transcript:</strong> 
-                                {{ transcript_id }}
-                                {% if mane_flag and mane_flag != 'N/A' and mane_flag != '' %}
-                                    <span style="color: #2c5f8a; font-weight: bold;">({{ mane_flag }})</span>
+                                {{ transcript_clean }}
+                                {% if mane_clean and mane_clean != 'N/A' and mane_clean != '' %}
+                                    <span style="color: #2c5f8a; font-weight: bold;">({{ mane_clean }})</span>
                                 {% endif %}
                                 <br>
                                 
-                                {% set hgvsc_hg19 = variant.get('HGVS_c_hg19', 'N/A') %}
-                                {% set hgvsc_hg38 = variant.get('HGVS_c_hg38', 'N/A') %}
+                                {# Normalize HGVS values #}
+                                {% set hgvsc_hg19_raw = variant.get('HGVS_c_hg19', 'N/A') %}
+                                {% set hgvsc_hg38_raw = variant.get('HGVS_c_hg38', 'N/A') %}
+                                {% set hgvsc_hg19 = 'N/A' if hgvsc_hg19_raw|string == 'nan' else hgvsc_hg19_raw %}
+                                {% set hgvsc_hg38 = 'N/A' if hgvsc_hg38_raw|string == 'nan' else hgvsc_hg38_raw %}
                                 
                                 <strong>HGVSc:</strong> 
                                 {% if hgvsc_hg19 == hgvsc_hg38 %}
@@ -609,8 +616,11 @@ class ReportGenerator:
                                 {% endif %}
                                 <br>
                                 
-                                {% set hgvsp_hg19 = variant.get('HGVS_p_hg19', 'N/A') %}
-                                {% set hgvsp_hg38 = variant.get('HGVS_p_hg38', 'N/A') %}
+                                {# Normalize HGVSp values #}
+                                {% set hgvsp_hg19_raw = variant.get('HGVS_p_hg19', 'N/A') %}
+                                {% set hgvsp_hg38_raw = variant.get('HGVS_p_hg38', 'N/A') %}
+                                {% set hgvsp_hg19 = 'N/A' if hgvsp_hg19_raw|string == 'nan' else hgvsp_hg19_raw %}
+                                {% set hgvsp_hg38 = 'N/A' if hgvsp_hg38_raw|string == 'nan' else hgvsp_hg38_raw %}
                                 
                                 {% if hgvsp_hg19 != 'N/A' or hgvsp_hg38 != 'N/A' %}
                                     <strong>HGVSp:</strong> 
