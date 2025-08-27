@@ -57,5 +57,6 @@ rule add_id_hg38:
         vcf = f"{LIFTOVER_BCFT}/{config['sample']}.bt.vcf"
     shell:
         """
-        bcftools annotate --set-id '%CHROM/%POS/%REF//%ALT' {input.vcf} -Ov -o {output.vcf}
+        bcftools annotate --set-id '%CHROM/%POS/%REF//%ALT' {input.vcf} -Ov \
+        | bcftools sort -Ov -o {output.vcf}
         """
