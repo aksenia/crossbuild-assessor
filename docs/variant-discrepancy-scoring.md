@@ -1,101 +1,119 @@
 # Variant discrepancy scoring
 
-Clinical evidence-first scoring system for prioritizing annotation discrepancies between genome builds.
+Priority transcript-based scoring system for prioritizing annotation discrepancies between genome builds.
 
 ## Scoring philosophy
 
-**Clinical evidence first**: Clinical interpretation changes are prioritized over VEP annotation differences.
-
-**Magnitude-based impact**: Transitions weighted by clinical significance:
-
-- HIGH ↔ MODERATE: Clinically significant (+15 points)
-- HIGH ↔ LOW/MODIFIER: Highly significant (+18-20 points)  
-- MODERATE ↔ LOW/MODIFIER: Significant (+10-12 points)
-- LOW ↔ MODIFIER: Annotation noise (+1 point)
+- HGVS concordance first: HGVS nomenclature mismatches on priority transcript drive prioritization.
+- MANE-first transcript selection: Uses clinical standard transcript hierarchy:
+  MANE Select → MANE Plus Clinical → Canonical → First available
+- Same transcript compared between builds for consistency
+- Clinical actionability: VUS and missing data de-prioritized (less clinically actionable).
 
 ## Priority categories
 
-**CRITICAL**: Clinical interpretation changes OR high impact transitions  
-**HIGH**: Functionally significant changes  
-**MODERATE**: Prediction changes and clinically relevant gene changes  
-**LOW**: Technical issues and annotation differences
-
+- CRITICAL: HGVS mismatches on priority transcript OR major clinical significance changes (Pathogenic↔Benign)
+- MODERATE: Priority transcript unavailable OR moderate clinical changes OR serious functional differences
+- LOW: Minor changes (VUS-Benign, prediction changes, gene symbol differences)
+- CONCORDANT: Perfect priority transcript match with identical HGVS nomenclature
+  
 ## Scoring components
 
-### Clinical evidence (Highest priority)
+HGVS Concordance (highest priority)
 
 ```text
-Clinical significance transitions (hg19→hg38):
-  BENIGN → PATHOGENIC:     +20 points (CRITICAL)
-  PATHOGENIC → BENIGN:     +18 points (CRITICAL)
-  VUS → PATHOGENIC:        +15 points (CRITICAL)
-  Other clinical changes:  +8 points (HIGH)
+Priority transcript HGVS mismatches:
+  HGVSc mismatch:           +100 points (CRITICAL)
+  HGVSp mismatch:           +50 points (CRITICAL)
+  Missing HGVS data:        +5 points (minimal penalty)
+Clinical Significance Changes
+textMajor clinical changes (CRITICAL):
+  Pathogenic ↔ Benign:      +90 points
+  
+Moderate changes (MODERATE):
+  Pathogenic ↔ VUS:         +40 points
+  
+Minor changes (LOW):
+  VUS ↔ Benign:            +25 points
+  Likely ↔ Definite:       +20 points
+  Missing clinical data:    +5 points
 ```
 
-### Impact transitions
+Transcript issues
 
 ```text
-High impact transitions (CRITICAL):
-  HIGH ↔ MODERATE:    +15 points
-  HIGH ↔ LOW:         +18 points  
-  HIGH ↔ MODIFIER:    +20 points
-
-Moderate transitions (HIGH):
-  MODERATE ↔ LOW:     +10 points
-  MODERATE ↔ MODIFIER: +12 points
-
-Low priority:
-  LOW ↔ MODIFIER:     +1 point
+Priority transcript availability:
+  MANE hg38 only:          +60 points (MODERATE)
+  No matching transcripts:  +30 points (MODERATE)
+  No transcript data:       +20 points (LOW)
 ```
 
-### Functional impact
+Functional changes
 
 ```text
-Same transcript consequence changes: +6 points 
+Consequence differences:
+  Serious differences:      +35 points (MODERATE)
+  Minor differences:        +20 points (LOW)
+  
+Annotation changes:
+  Gene symbol changes:      +15 points (LOW)
+  Impact level changes:     +15 points (LOW)
 ```
 
-### Predictions and genes
+Technical issues
 
 ```text
-SIFT/PolyPhen changes: +5 points each
-Gene changes: +0.1-4 points (conditional on clinical relevance)
+Liftover problems:
+  Position mismatch:        +20 points (LOW)
+  Genotype mismatch:        +20 points (LOW)
+  REF/ALT swap:            +10 points (LOW)
 ```
 
-### Technical issues
+Prediction changes
 
 ```text
-Position mismatch:    +3 points
-Genotype mismatch:    +3 points  
-REF/ALT swap:         +2 points
+Pathogenicity predictions:
+  SIFT changes:             +10 points (LOW)
+  PolyPhen changes:         +10 points (LOW)
 ```
 
 ## Evidence override
 
-**Benign suppression**: 90% score reduction for LOW/MODIFIER impact + benign evidence  
-**Pathogenic boost**: 2x score boost for HIGH impact or pathogenic evidence
+- Benign suppression: 90% score reduction for LOW/MODIFIER impact + benign evidence
+- Pathogenic boost: 2x score boost for HIGH impact or pathogenic evidence
+
+## Bounded scoring
+
+Multiple issues within one category cannot elevate to the next priority level, ensuring stable categorization.
 
 ## Example scoring
 
-### CRITICAL: Clinical change
+CRITICAL: HGVS Mismatch
 
 ```text
-Variant: chr1:12345 A>G
-ClinVar: benign (hg19) → pathogenic (hg38)
-Score: +20 × 2.0 (pathogenic boost) = 40 points → CRITICAL
+Variant: chr1:12345 A>G  
+Priority transcript: NM_000059.4 (MANE Select)
+HGVSc: c.1234G>A (hg19) vs c.1235G>A (hg38)
+Score: +100 points → CRITICAL
+
 ```
 
-### HIGH: Impact transition
+MODERATE: Missing Priority Transcript
 
 ```text
 Variant: chr2:67890 C>T
-Impact: HIGH (hg19) → MODIFIER (hg38)
-Score: +20 (impact) + 6 (transcript) = 26 points → HIGH
+Transcript status: MANE_hg38_Only
+Clinical: Pathogenic → VUS  
+Score: +60 (transcript) + 40 (clinical) = 100 → CRITICAL
+
 ```
 
-### LOW: Annotation noise
+CONCORDANT: Perfect Match
 
 ```text
-Variant: chr4:22222 T>C
-Impact: MODIFIER (both), ClinVar: benign (both)
-Score: +1 × 0.1 (benign suppression) = 0.1 points → LOW
+Variant: chr3:11111 T>C
+Priority transcript: NM_012345.3 (MANE Select, both builds)
+HGVSc: c.567T>C (identical)
+Clinical: Pathogenic (stable)
+Score: 0 points → CONCORDANT
 ```
