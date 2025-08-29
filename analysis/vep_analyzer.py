@@ -317,6 +317,7 @@ class VEPAnalyzer:
             # Basic variant information
             'mapping_status': variant_row['mapping_status'],
             'source_chrom': chrom,
+            'bcftools_hg38_chrom': variant_row['bcftools_hg38_chrom'],
             'source_pos': pos,
             'source_alleles': variant_row['source_alleles'],
             'gt_hg19': ref_allele,

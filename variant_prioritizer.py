@@ -167,7 +167,7 @@ def format_for_excel(df):
         print("First row of data:")
         print(df.iloc[0].to_dict())
     
-    # CRITICAL FIX: Reset the index so we have 0-based indexing
+    # Reset the index so we have 0-based indexing
     df = df.reset_index(drop=True)
     
     # Create a clean output dataframe
@@ -177,7 +177,8 @@ def format_for_excel(df):
     output_df['Rank'] = range(1, len(df) + 1)
     output_df['Priority_Score'] = df['priority_score']
     output_df['Priority_Category'] = df['priority_category']
-    output_df['Chromosome'] = df['source_chrom']
+    output_df['Chromosome_hg19'] = df['source_chrom']
+    output_df['Chromosome_hg38'] = df['bcftools_hg38_chrom']
     output_df['Position_hg19'] = df['source_pos']
     
    # GT creation using direct data sources
@@ -278,7 +279,7 @@ def format_for_excel(df):
     print(f"Output dataframe created with {len(output_df)} rows")
     print("Sample output:")
     if len(output_df) > 0:
-        print(output_df[['Rank', 'Chromosome', 'Position_hg19', 'Gene_hg19', 'Priority_Score', 'Priority_Category']].head().to_string(index=False))
+        print(output_df[['Rank', 'Chromosome_hg19', 'Chromosome_hg38', 'Position_hg19', 'Gene_hg19', 'Priority_Score', 'Priority_Category']].head().to_string(index=False))
     
     return output_df
 
@@ -318,13 +319,16 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         return ''
 
     output_df['GT_hg38'] = df.apply(create_hg38_gt, axis=1)
+
     
     # Clinical evidence-focused column selection and renaming
     column_mapping = {
         'Rank': 'Rank',
-        'source_chrom': 'Chromosome',
+        'source_chrom': 'Chromosome_hg19',
+        'bcftools_hg38_chrom': 'Chromosome_hg38',
         'source_pos': 'Position_hg19',
-        'bcftools_hg38_pos': 'Position_hg38',
+        'bcftools_hg38_pos': 'Position_hg38_bcftools',
+        'liftover_hg38_pos': 'Position_hg38_CrossMap',
         'GT_hg19': 'GT_hg19',
         'GT_hg38': 'GT_hg38', 
         'flip': 'Strand_Flip',      
@@ -336,9 +340,8 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg19_clin_sig_normalized': 'Clinical_Significance_hg19',
         'hg38_clin_sig_normalized': 'Clinical_Significance_hg38',
         'clin_sig_change': 'Clinical_Change_Direction',
-        'hg19_impact': 'Impact_hg19',
-        'hg38_impact': 'Impact_hg38',
-        'impact_changes': 'Impact_Changes',
+#        'hg19_impact': 'Impact_hg19',
+#        'hg38_impact': 'Impact_hg38',
         'hg19_transcript_count': 'Tx_Count_hg19',
         'hg38_transcript_count': 'Tx_Count_hg38',
         # MANE information
@@ -378,6 +381,7 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'hg38_polyphen': 'PolyPhen_hg38',
         'sift_change': 'SIFT_Change',
         'polyphen_change': 'PolyPhen_Change',
+        'impact_changes': 'Impact_Changes',
         'pos_match': 'Position_Match',
         'gt_match': 'Genotype_Match',
         'mapping_status': 'Mapping_Status',
@@ -794,7 +798,7 @@ CLINICAL EVIDENCE-DRIVEN SCORING:
             return 0
         
         print(f"\n✓ Analysis completed: {len(result_df):,} total discordant variants found")
-        
+
         # Filter by minimum score
         if args.min_score > 0:
             filtered_df = result_df[result_df['priority_score'] >= args.min_score].copy()
@@ -804,6 +808,7 @@ CLINICAL EVIDENCE-DRIVEN SCORING:
         
         # Sort by priority score (descending)
         filtered_df = filtered_df.sort_values('priority_score', ascending=False)
+
         
         # Create clinical evidence-focused CSV output
         output_df = create_clinical_csv_output(filtered_df, output_dir, args.max_variants)
