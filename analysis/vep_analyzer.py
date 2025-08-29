@@ -260,12 +260,14 @@ class VEPAnalyzer:
         hg38_gene = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'symbol')
         hg19_impact = get_priority_transcript_data(hg19_transcripts_df, priority_transcript_crossbuild, 'impact')
         hg38_impact = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'impact')
-        
+        hg19_consequence = get_priority_transcript_data(hg19_transcripts_df, priority_transcript_crossbuild, 'consequence')
+        hg38_consequence = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'consequence')
+    
+
         # Change detection (only compare if both have data)
         gene_changes = 1 if (hg19_gene and hg38_gene and clean_string(hg19_gene) != clean_string(hg38_gene)) else 0
         impact_changes = 1 if (hg19_impact and hg38_impact and clean_string(hg19_impact) != clean_string(hg38_impact)) else 0
 
-        
         # ===== CLINICAL SIGNIFICANCE ANALYSIS =====
         hg19_clin_sig = get_priority_transcript_data(hg19_transcripts_df, priority_transcript_crossbuild, 'clin_sig')
         hg38_clin_sig = get_priority_transcript_data(hg38_transcripts_df, priority_transcript_crossbuild, 'clin_sig')
@@ -354,7 +356,9 @@ class VEPAnalyzer:
             # Priority transcript selection
             'transcript_crossbuild_status': transcript_crossbuild_status,
             'priority_transcript_crossbuild': priority_transcript_crossbuild,
-            
+            'priority_consequence_hg19':  hg19_consequence,
+            'priority_consequence_hg38': hg38_consequence,
+
             # HGVS analysis
             'priority_hgvsc_hg19': priority_hgvs_analysis['priority_hgvsc_hg19'],
             'priority_hgvsc_hg38': priority_hgvs_analysis['priority_hgvsc_hg38'],

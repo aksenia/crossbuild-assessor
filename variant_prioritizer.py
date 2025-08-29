@@ -251,6 +251,8 @@ def format_for_excel(df):
     # Priority transcript selection
     output_df['Transcript_CrossBuild_Status'] = df['transcript_crossbuild_status'].fillna('No_Transcripts')
     output_df['Priority_Transcript_CrossBuild'] = df['priority_transcript_crossbuild'].fillna('NONE')
+    output_df['Consequence_hg19'] = df['priority_consequence_hg19'].fillna('')
+    output_df['Consequence_hg38'] = df['priority_consequence_hg38'].fillna('')
 
     # Priority transcript HGVS analysis
     output_df['HGVS_c_hg19'] = df['priority_hgvsc_hg19'].fillna('')
@@ -263,8 +265,6 @@ def format_for_excel(df):
     # Worst consequence analysis
     output_df['Worst_Consequence_hg19'] = df['hg19_worst_consequence'].fillna('')
     output_df['Worst_Consequence_hg38'] = df['hg38_worst_consequence'].fillna('')
-    output_df['Worst_Consequence_Tx_hg19'] = df['hg19_worst_consequence_tx'].fillna('')
-    output_df['Worst_Consequence_Tx_hg38'] = df['hg38_worst_consequence_tx'].fillna('')
     output_df['Worst_Consequence_Tx_Is_Priority_hg19'] = df['hg19_worst_consequence_tx_is_priority'].fillna('NO')
     output_df['Worst_Consequence_Tx_Is_Priority_hg38'] = df['hg38_worst_consequence_tx_is_priority'].fillna('NO')
   
@@ -356,6 +356,7 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         # Priority transcript selection
         'transcript_crossbuild_status': 'Transcript_CrossBuild_Status',
         'priority_transcript_crossbuild': 'Priority_Transcript_CrossBuild',
+
         # Priority transcript HGVS analysis
         'priority_hgvsc_hg19': 'HGVS_c_hg19',
         'priority_hgvsc_hg38': 'HGVS_c_hg38',
@@ -364,16 +365,16 @@ def create_clinical_csv_output(df, output_dir, max_variants=10000):
         'priority_hgvsc_concordance': 'HGVS_c_Concordance',
         'priority_hgvsp_concordance': 'HGVS_p_Concordance',
         # Matched transcript analysis
+        'has_worst_consequence_difference': 'Has_Worst_Consequence_Difference',
+        'hg19_worst_consequence_tx_is_priority': 'Worst_Consequence_Tx_Is_Priority_hg19',
+        'hg38_worst_consequence_tx_is_priority': 'Worst_Consequence_Tx_Is_Priority_hg38',
+        'priority_consequence_hg19': 'Consequence_hg19',
+        'priority_consequence_hg38': 'Consequence_hg38',
         'consequence_relationship': 'Consequence_Relationship',
         'consequence_change': 'Consequence_Change',
         # Worst consequence analysis
         'hg19_worst_consequence': 'Worst_Consequence_hg19',
         'hg38_worst_consequence': 'Worst_Consequence_hg38',
-        'hg19_worst_consequence_tx': 'Worst_Consequence_Tx_hg19',
-        'hg38_worst_consequence_tx': 'Worst_Consequence_Tx_hg38',
-        'hg19_worst_consequence_tx_is_priority': 'Worst_Consequence_Tx_Is_Priority_hg19',
-        'hg38_worst_consequence_tx_is_priority': 'Worst_Consequence_Tx_Is_Priority_hg38',
-        'has_worst_consequence_difference': 'Has_Worst_Consequence_Difference',
         # Pathogenic predictions 
         'hg19_sift': 'SIFT_hg19',
         'hg38_sift': 'SIFT_hg38',
