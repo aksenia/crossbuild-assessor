@@ -34,10 +34,13 @@ cache_manager.py         # Result caching system
 ### Utilities (`utils/`)
 
 ```text
-clinical_utils.py       # Clinical significance parsing
-transcript_utils.py     # Transcript ID normalization
-data_utils.py           # Data transformation helpers
-impact_utils.py         # Impact level calculations
+clinical_utils.py       # Clinical significance normalization and parsing
+transcript_utils.py     # Transcript ID processing and MANE selection
+data_utils.py           # General data transformation and formatting utilities
+impact_utils.py         # VEP impact level processing and calculations
+summary_utils.py        # Structured summary data generation for JSON exports
+scoring_utils.py        # Priority scoring engine and categorization system
+report_generator.py     # HTML report generation from analysis outputs
 ```
 
 ### Visualization (`visualization/`)
