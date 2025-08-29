@@ -211,7 +211,7 @@ class ReportGenerator:
                 
                 # Select columns for clinical review
                 clinical_columns = [
-                    'Rank', 'Chromosome', 'Position_hg19', 'Gene_hg19', 'Gene_hg38',
+                    'Rank', 'Chromosome_hg19', 'Position_hg19', 'Gene_hg19', 'Gene_hg38',
                     'Priority_Score', 'Priority_Category', 'Discordance_Summary',
                     'Priority_Transcript_CrossBuild', 'MANE_Flag_hg38', 'HGVS_c_hg19', 'HGVS_c_hg38', 
                     'HGVS_p_hg19', 'HGVS_p_hg38', 'HGVS_c_Concordance', 'HGVS_p_Concordance',
@@ -609,7 +609,7 @@ class ReportGenerator:
                                         {{ variant.get('Rank', 'N/A') }}
                                     {% endif %}
                                 </td>
-                                <td>{{ variant.get('Chromosome', 'N/A') }}:{{ variant.get('Position_hg19', 'N/A') }}</td>
+                                <td>{{ variant.get('Chromosome_hg19', 'N/A') }}:{{ variant.get('Position_hg19', 'N/A') }}</td>
                                 <td>
                                     {% set gene_hg19_raw = variant.get('Gene_hg19', 'N/A') %}
                                     {% set gene_hg38_raw = variant.get('Gene_hg38', 'N/A') %}
