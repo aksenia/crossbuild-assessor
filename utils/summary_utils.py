@@ -439,6 +439,69 @@ class SummaryDataCalculator:
                 "pathogenicity_changes": ((df_full['sift_change'] != '') | (df_full['polyphen_change'] != '')).sum() if 'sift_change' in df_full.columns else 0
             }
         
+        # Per-gene technical discrepancy analysis
+        gene_technical_analysis = {}
+        if len(df_full) > 0:
+            # Count technical issues per gene
+            gene_stats = {}
+            for _, row in df_full.iterrows():
+                gene = row.get('hg38_gene', row.get('hg19_gene', 'Unknown'))
+                if gene not in gene_stats:
+                    gene_stats[gene] = {'total_technical_issues': 0, 'variant_count': 0}
+                
+                # Count only technical discrepancies
+                technical_count = 0
+                if row.get('pos_match') == 0:
+                    technical_count += 1
+                if row.get('gt_match') == 0:
+                    technical_count += 1
+                if row.get('flip') in ['flip']:
+                    technical_count += 1
+                if row.get('swap') in ['1', '1.0', 1, 1.0]:
+                    technical_count += 1
+                
+                gene_stats[gene]['total_technical_issues'] += technical_count
+                gene_stats[gene]['variant_count'] += 1
+            
+            # Calculate per-gene rates
+            gene_rates = []
+            for gene, stats in gene_stats.items():
+                if stats['variant_count'] > 0:
+                    rate = stats['total_technical_issues'] / stats['variant_count']
+                    gene_rates.append(rate)
+            
+            # Calculate mean and standard deviation of rates
+            dataset_mean = sum(gene_rates) / len(gene_rates) if gene_rates else 0
+            dataset_variance = sum((x - dataset_mean) ** 2 for x in gene_rates) / len(gene_rates) if gene_rates else 0
+            dataset_sd = dataset_variance ** 0.5
+            
+            # Flag genes >= mean + 2*SD (based on rate)
+            outlier_threshold = dataset_mean + (2 * dataset_sd)
+            
+            flagged_genes = []
+            for gene, stats in gene_stats.items():
+                if stats['variant_count'] >= 2:
+                    gene_avg = stats['total_technical_issues'] / stats['variant_count']
+                    if gene_avg >= outlier_threshold:
+                        flagged_genes.append({
+                            'gene': gene,
+                            'total_technical_issues': stats['total_technical_issues'],
+                            'total_variants': stats['variant_count'],
+                            'technical_issue_rate': round(gene_avg, 1)
+                        })
+            
+            # Sort by rate descending
+            flagged_genes.sort(key=lambda x: x['technical_issue_rate'], reverse=True)
+            
+            gene_technical_analysis = {
+                'dataset_mean_technical_rate': round(dataset_mean, 1),
+                'dataset_sd_technical_rate': round(dataset_sd, 1),
+                'outlier_threshold': round(outlier_threshold, 1),
+                'total_genes_analyzed': len(gene_stats),
+                'flagged_genes_above_average': flagged_genes[:10],
+                'flagged_genes_count': len(flagged_genes)
+            }
+        
         # Top variants summary
         top_variants_summary = {}
         if len(df_excel) > 0:
@@ -480,5 +543,6 @@ class SummaryDataCalculator:
             "hgvs_analysis": hgvs_analysis,
             "priority_transcript_analysis": hgvs_analysis.get('priority_transcript_analysis', {}),  # Add as top-level
             "functional_discordances": functional_discordances,
+            "gene_technical_analysis": gene_technical_analysis,
             "top_variants_summary": top_variants_summary
         }

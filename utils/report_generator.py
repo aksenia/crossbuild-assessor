@@ -47,7 +47,7 @@ class ReportGenerator:
         # Collect all data
         self._collect_metadata()
         self._collect_summary_data()
-        self._debug_summary_data() # DEBUG
+    #    self._debug_summary_data() # DEBUG
         self._collect_plot_images()
         self._collect_variant_data()
         
@@ -169,9 +169,6 @@ class ReportGenerator:
         if csv_file.exists():
             df = pd.read_csv(csv_file)
             
-            # Debug: Print available columns to help identify the correct column name
-            print(f"Available columns in CSV: {list(df.columns)}")
-            
             # Top 10 variants with clinical evidence focus
             if len(df) > 0:
                 # Filter to variants with meaningful clinical changes only
@@ -223,7 +220,6 @@ class ReportGenerator:
                 
                 # Only include columns that exist
                 available_columns = [col for col in clinical_columns if col in df_sorted.columns]
-                print(f"Using columns: {available_columns}")
                 
                 # Take top 10 highest priority variants with changes
                 if len(df_sorted) > 0:
@@ -457,7 +453,45 @@ class ReportGenerator:
                     <div class="metric-label">MANE hg38 Only</div>
                 </div>
             </div>
-            <!-- CLINICAL SIGNIFICANCE TRANSITIONS -->
+
+            <!-- Show basic clinical categories if detailed data not available -->
+            <h3>Clinical significance annotations from ClinVar </h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Category</th>
+                            <th>hg19 count</th>
+                            <th>hg38 count</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>PATHOGENIC</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'PATHOGENIC'], 0) }}</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'PATHOGENIC'], 0) }}</td>
+                        </tr>
+                        <tr>
+                            <td>BENIGN</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'BENIGN'], 0) }}</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'BENIGN'], 0) }}</td>
+                        </tr>
+                        <tr>
+                            <td>VUS</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'VUS'], 0) }}</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'VUS'], 0) }}</td>
+                        </tr>
+                        <tr>
+                            <td>NONE</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'NONE'], 0) }}</td>
+                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'NONE'], 0) }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+             <!-- CLINICAL SIGNIFICANCE TRANSITIONS -->
             <h3>Clinical significance transitions (hg19→hg38)</h3>
             <div class="metrics-grid">
                 <div class="metric-card">
@@ -532,170 +566,186 @@ class ReportGenerator:
                 </table>
             </div>
 
+
             <!-- PRIORITIZATION PLOTS -->
             {% if images.prioritization_plots %}
-            <h3>Prioritization visualizations</h3>
+            <h3>Discrepancies visualizations</h3>
             <div class="plot-container">
                 <img src="{{ images.prioritization_plots }}" alt="Variant Prioritization">
             </div>
             {% endif %}
-        </div>
+            </div>
 
-        <!-- TOP PRIORITY VARIANTS -->
-        {% if top_variants %}
-        <div class="section">
-            <h2>Top priority variants</h2>
-            <p><em>Showing example variants with discrepancies</em></p>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Priority</th>
-                            <th>Location</th>
-                            <th>Gene (hg19/hg38)</th>
-                            <th>Priority Transcript HGVS</th>
-                            <th>Score Breakdown</th>
-                            <th>Consequence Relationship</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    <tbody>
-                        {% for variant in top_variants %}
-                        <tr>
-                            <td>
-                                {% if variant.get('Priority_Category') %}
-                                    <span class="{% if variant.Priority_Category == 'CRITICAL' %}clinical-change{% else %}clinical-stable{% endif %}">
-                                        {{ variant.Priority_Category }}
-                                    </span>
-                                    {% if variant.get('Priority_Score') %}
-                                        <br><small>({{ variant.Priority_Score }})</small>
-                                    {% endif %}
-                                {% else %}
-                                    {{ variant.get('Rank', 'N/A') }}
-                                {% endif %}
-                            </td>
-                            <td>{{ variant.get('Chromosome', 'N/A') }}:{{ variant.get('Position_hg19', 'N/A') }}</td>
-                            <td>
-                                {% set gene_hg19_raw = variant.get('Gene_hg19', 'N/A') %}
-                                {% set gene_hg38_raw = variant.get('Gene_hg38', 'N/A') %}
-                                {% set gene_hg19 = 'N/A' if gene_hg19_raw | string == 'nan' or gene_hg19_raw == '' else gene_hg19_raw %}
-                                {% set gene_hg38 = 'N/A' if gene_hg38_raw | string == 'nan' or gene_hg38_raw == '' else gene_hg38_raw %}
-                                
-                                {% if gene_hg19 == gene_hg38 %}
-                                    <span class="clinical-stable">{{ gene_hg19 }}</span>
-                                {% else %}
-                                    <span class="clinical-change">{{ gene_hg19 }} → {{ gene_hg38 }}</span>
-                                {% endif %}
-                            </td>
-                            <td style="font-size: 11px;">
-                                {% set transcript_id = variant.get('Priority_Transcript_CrossBuild', 'N/A') %}
-                                {% set mane_flag = variant.get('MANE_Flag_hg38', '') %}
-                                
-                                {# Normalize values to handle nan, None, empty strings #}
-                                {% set transcript_clean = 'N/A' if transcript_id in ['NONE', 'nan', None, ''] or transcript_id|string == 'nan' else transcript_id %}
-                                {% set mane_clean = '' if mane_flag in ['nan', None, ''] or mane_flag|string == 'nan' else mane_flag %}
-                                
-                                <strong>Transcript:</strong> 
-                                {{ transcript_clean }}
-                                {% if mane_clean and mane_clean != 'N/A' and mane_clean != '' %}
-                                    <span style="color: #2c5f8a; font-weight: bold;">({{ mane_clean }})</span>
-                                {% endif %}
-                                <br>
-                                
-                                {# Normalize HGVS values #}
-                                {% set hgvsc_hg19_raw = variant.get('HGVS_c_hg19', 'N/A') %}
-                                {% set hgvsc_hg38_raw = variant.get('HGVS_c_hg38', 'N/A') %}
-                                {% set hgvsc_hg19 = 'N/A' if hgvsc_hg19_raw|string == 'nan' else hgvsc_hg19_raw %}
-                                {% set hgvsc_hg38 = 'N/A' if hgvsc_hg38_raw|string == 'nan' else hgvsc_hg38_raw %}
-                                
-                                <strong>HGVSc:</strong> 
-                                {% if hgvsc_hg19 == hgvsc_hg38 %}
-                                    {{ hgvsc_hg19 }}
-                                {% else %}
-                                    <span class="clinical-change">{{ hgvsc_hg19 }} → {{ hgvsc_hg38 }}</span>
-                                {% endif %}
-                                <br>
-                                
-                                {# Normalize HGVSp values #}
-                                {% set hgvsp_hg19_raw = variant.get('HGVS_p_hg19', 'N/A') %}
-                                {% set hgvsp_hg38_raw = variant.get('HGVS_p_hg38', 'N/A') %}
-                                {% set hgvsp_hg19 = 'N/A' if hgvsp_hg19_raw|string == 'nan' else hgvsp_hg19_raw %}
-                                {% set hgvsp_hg38 = 'N/A' if hgvsp_hg38_raw|string == 'nan' else hgvsp_hg38_raw %}
-                                
-                                {% if hgvsp_hg19 != 'N/A' or hgvsp_hg38 != 'N/A' %}
-                                    <strong>HGVSp:</strong> 
-                                    {% if hgvsp_hg19 == hgvsp_hg38 %}
-                                        {{ hgvsp_hg19 }}
+            <!-- TOP PRIORITY VARIANTS -->
+            {% if top_variants %}
+            <div class="section">
+                <h2>Top priority variants</h2>
+                <p><em>Showing example variants with discrepancies</em></p>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Priority</th>
+                                <th>Location</th>
+                                <th>Gene (hg19/hg38)</th>
+                                <th>Priority Transcript HGVS</th>
+                                <th>Score Breakdown</th>
+                                <th>Consequence Relationship</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        <tbody>
+                            {% for variant in top_variants %}
+                            <tr>
+                                <td>
+                                    {% if variant.get('Priority_Category') %}
+                                        <span class="{% if variant.Priority_Category == 'CRITICAL' %}clinical-change{% else %}clinical-stable{% endif %}">
+                                            {{ variant.Priority_Category }}
+                                        </span>
+                                        {% if variant.get('Priority_Score') %}
+                                            <br><small>({{ variant.Priority_Score }})</small>
+                                        {% endif %}
                                     {% else %}
-                                        <span class="clinical-change">{{ hgvsp_hg19 }} → {{ hgvsp_hg38 }}</span>
+                                        {{ variant.get('Rank', 'N/A') }}
                                     {% endif %}
-                                {% endif %}
-                            </td>
-                            <td style="font-size: 10px; max-width: 250px;">
-                                {{ variant.get('score_breakdown', variant.get('Discordance_Summary', 'N/A')) }}
-                            </td>
-                            <td>
-                                {{ format_consequence_relationship(variant) }}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                                </td>
+                                <td>{{ variant.get('Chromosome', 'N/A') }}:{{ variant.get('Position_hg19', 'N/A') }}</td>
+                                <td>
+                                    {% set gene_hg19_raw = variant.get('Gene_hg19', 'N/A') %}
+                                    {% set gene_hg38_raw = variant.get('Gene_hg38', 'N/A') %}
+                                    {% set gene_hg19 = 'N/A' if gene_hg19_raw | string == 'nan' or gene_hg19_raw == '' else gene_hg19_raw %}
+                                    {% set gene_hg38 = 'N/A' if gene_hg38_raw | string == 'nan' or gene_hg38_raw == '' else gene_hg38_raw %}
+                                    
+                                    {% if gene_hg19 == gene_hg38 %}
+                                        <span class="clinical-stable">{{ gene_hg19 }}</span>
+                                    {% else %}
+                                        <span class="clinical-change">{{ gene_hg19 }} → {{ gene_hg38 }}</span>
+                                    {% endif %}
+                                </td>
+                                <td style="font-size: 11px;">
+                                    {% set transcript_id = variant.get('Priority_Transcript_CrossBuild', 'N/A') %}
+                                    {% set mane_flag = variant.get('MANE_Flag_hg38', '') %}
+                                    
+                                    {# Normalize values to handle nan, None, empty strings #}
+                                    {% set transcript_clean = 'N/A' if transcript_id in ['NONE', 'nan', None, ''] or transcript_id|string == 'nan' else transcript_id %}
+                                    {% set mane_clean = '' if mane_flag in ['nan', None, ''] or mane_flag|string == 'nan' else mane_flag %}
+                                    
+                                    <strong>Transcript:</strong> 
+                                    {{ transcript_clean }}
+                                    {% if mane_clean and mane_clean != 'N/A' and mane_clean != '' %}
+                                        <span style="color: #2c5f8a; font-weight: bold;">({{ mane_clean }})</span>
+                                    {% endif %}
+                                    <br>
+                                    
+                                    {# Normalize HGVS values #}
+                                    {% set hgvsc_hg19_raw = variant.get('HGVS_c_hg19', 'N/A') %}
+                                    {% set hgvsc_hg38_raw = variant.get('HGVS_c_hg38', 'N/A') %}
+                                    {% set hgvsc_hg19 = 'N/A' if hgvsc_hg19_raw|string == 'nan' else hgvsc_hg19_raw %}
+                                    {% set hgvsc_hg38 = 'N/A' if hgvsc_hg38_raw|string == 'nan' else hgvsc_hg38_raw %}
+                                    
+                                    <strong>HGVSc:</strong> 
+                                    {% if hgvsc_hg19 == hgvsc_hg38 %}
+                                        {{ hgvsc_hg19 }}
+                                    {% else %}
+                                        <span class="clinical-change">{{ hgvsc_hg19 }} → {{ hgvsc_hg38 }}</span>
+                                    {% endif %}
+                                    <br>
+                                    
+                                    {# Normalize HGVSp values #}
+                                    {% set hgvsp_hg19_raw = variant.get('HGVS_p_hg19', 'N/A') %}
+                                    {% set hgvsp_hg38_raw = variant.get('HGVS_p_hg38', 'N/A') %}
+                                    {% set hgvsp_hg19 = 'N/A' if hgvsp_hg19_raw|string == 'nan' else hgvsp_hg19_raw %}
+                                    {% set hgvsp_hg38 = 'N/A' if hgvsp_hg38_raw|string == 'nan' else hgvsp_hg38_raw %}
+                                    
+                                    {% if hgvsp_hg19 != 'N/A' or hgvsp_hg38 != 'N/A' %}
+                                        <strong>HGVSp:</strong> 
+                                        {% if hgvsp_hg19 == hgvsp_hg38 %}
+                                            {{ hgvsp_hg19 }}
+                                        {% else %}
+                                            <span class="clinical-change">{{ hgvsp_hg19 }} → {{ hgvsp_hg38 }}</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                                <td style="font-size: 10px; max-width: 250px;">
+                                    {{ variant.get('score_breakdown', variant.get('Discordance_Summary', 'N/A')) }}
+                                </td>
+                                <td>
+                                    {{ format_consequence_relationship(variant) }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
-        </div>
-        {% endif %}
+            {% endif %}
 
-        <!-- DATA COVERAGE ANALYSIS -->
-        <div class="section">
-            <h2>Data coverage analysis</h2>
-            
-            <h3>Evidence distribution by build</h3>
-            <div class="metrics-grid">
-                <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'percentage_with_annotations']) }}%</div>
-                    <div class="metric-label">Clinical data coverage</div>
+            <!-- DATA COVERAGE ANALYSIS -->
+            <div class="section">
+                <h2>Data coverage analysis</h2>
+                
+                <h3>Evidence distribution by build</h3>
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'percentage_with_annotations']) }}%</div>
+                        <div class="metric-label">Clinical data coverage</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{{ get_summary_value(['prioritization', 'clinical_coverage', 'pathogenicity_predictions', 'percentage_with_predictions']) }}%</div>
+                        <div class="metric-label">Prediction coverage</div>
+                    </div>
                 </div>
-                <div class="metric-card">
-                    <div class="metric-value">{{ get_summary_value(['prioritization', 'clinical_coverage', 'pathogenicity_predictions', 'percentage_with_predictions']) }}%</div>
-                    <div class="metric-label">Prediction coverage</div>
+            
+
+            <!-- GENE-LEVEL TECHNICAL ANALYSIS -->
+            <div class="section">
+                <h2>Gene-level technical issues</h2>              
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value">{{ get_summary_value(['prioritization', 'gene_technical_analysis', 'dataset_mean_technical_rate']) }}</div>
+                        <div class="metric-label">Dataset mean technical rate</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{{ get_summary_value(['prioritization', 'gene_technical_analysis', 'total_genes_analyzed']) }}</div>
+                        <div class="metric-label">Total genes analyzed</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value">{{ get_summary_value(['prioritization', 'gene_technical_analysis', 'flagged_genes_count']) }}</div>
+                        <div class="metric-label">Genes above threshold</div>
+                    </div>
+                </div>
+                
+                <h3>Statistical outliers (≥ mean + 2SD)</h3>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Gene</th>
+                                <th>Technical issue rate</th>
+                                <th>Total issues</th>
+                                <th>Total variants</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set flagged_genes = get_summary_value(['prioritization', 'gene_technical_analysis', 'flagged_genes_above_average']) %}
+                            {% if flagged_genes and flagged_genes != 'N/A' and flagged_genes|length > 0 %}
+                                {% for gene in flagged_genes %}
+                                <tr>
+                                    <td><strong>{{ gene.gene }}</strong></td>
+                                    <td class="clinical-change">{{ gene.technical_issue_rate }}</td>
+                                    <td>{{ gene.total_technical_issues }}</td>
+                                    <td>{{ gene.total_variants }}</td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="4" class="no-data">No genes flagged as statistical outliers</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-            
-            <!-- Show basic clinical categories if detailed data not available -->
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Category</th>
-                            <th>hg19 count</th>
-                            <th>hg38 count</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <tr>
-                            <td>PATHOGENIC</td>
-                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'PATHOGENIC'], 0) }}</td>
-                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'PATHOGENIC'], 0) }}</td>
-                        </tr>
-                        <tr>
-                            <td>BENIGN</td>
-                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'BENIGN'], 0) }}</td>
-                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'BENIGN'], 0) }}</td>
-                        </tr>
-                        <tr>
-                            <td>VUS</td>
-                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'VUS'], 0) }}</td>
-                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'VUS'], 0) }}</td>
-                        </tr>
-                        <tr>
-                            <td>NONE</td>
-                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg19_distribution', 'NONE'], 0) }}</td>
-                            <td>{{ get_summary_value(['prioritization', 'clinical_coverage', 'clinical_annotations', 'hg38_distribution', 'NONE'], 0) }}</td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
 
         <!-- TECHNICAL NOTES -->
         <div class="section">
