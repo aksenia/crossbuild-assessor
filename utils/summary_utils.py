@@ -475,12 +475,12 @@ class SummaryDataCalculator:
             dataset_variance = sum((x - dataset_mean) ** 2 for x in gene_rates) / len(gene_rates) if gene_rates else 0
             dataset_sd = dataset_variance ** 0.5
             
-            # Flag genes >= mean + 2*SD (based on rate)
+            # Flag genes >= mean + x*SD (based on rate), where x is a fixed constant
             outlier_threshold = dataset_mean + (1.5 * dataset_sd)
             
             flagged_genes = []
             for gene, stats in gene_stats.items():
-                if stats['variant_count'] >= 2:
+                if stats['variant_count'] > 2:
                     gene_avg = stats['total_technical_issues'] / stats['variant_count']
                     if gene_avg >= outlier_threshold:
                         flagged_genes.append({
@@ -490,8 +490,8 @@ class SummaryDataCalculator:
                             'technical_issue_rate': round(gene_avg, 2)  # Two decimal places
                         })
             
-            # Sort by variant count descending, then by rate descending
-            flagged_genes.sort(key=lambda x: (x['total_variants'], x['technical_issue_rate']), reverse=True)
+            # Sort by rate descending first, then by variant count descending
+            flagged_genes.sort(key=lambda x: (x['technical_issue_rate'], x['total_variants']), reverse=True)
             
             # Create more concise representation for JSON
             flagged_genes_compact = [
@@ -500,9 +500,9 @@ class SummaryDataCalculator:
             ]
             
             gene_technical_analysis = {
-                'dataset_mean_technical_rate': round(dataset_mean, 2),  # Two decimal places
-                'dataset_sd_technical_rate': round(dataset_sd, 2),     # Two decimal places
-                'outlier_threshold': round(outlier_threshold, 2),      # Two decimal places
+                'dataset_mean_technical_rate': round(dataset_mean, 3),  # Three decimal places
+                'dataset_sd_technical_rate': round(dataset_sd, 3),     # Three decimal places
+                'outlier_threshold': round(outlier_threshold, 3),      # Three decimal places
                 'total_genes_analyzed': len(gene_stats),
                 'flagged_genes_above_average': flagged_genes,          # Full details for HTML
                 'flagged_genes_compact': flagged_genes_compact,        # Compact for JSON
