@@ -703,7 +703,7 @@ class ReportGenerator:
                 <div class="metrics-grid">
                     <div class="metric-card">
                         <div class="metric-value">{{ get_summary_value(['prioritization', 'gene_technical_analysis', 'dataset_mean_technical_rate']) }}</div>
-                        <div class="metric-label">Dataset mean technical rate</div>
+                        <div class="metric-label">Dataset mean technical issue rate</div>
                     </div>
                     <div class="metric-card">
                         <div class="metric-value">{{ get_summary_value(['prioritization', 'gene_technical_analysis', 'total_genes_analyzed']) }}</div>
@@ -715,7 +715,7 @@ class ReportGenerator:
                     </div>
                 </div>
                 
-                <h3>Statistical outliers (≥ mean + 2SD)</h3>
+                <h3>Statistical outliers (≥ mean + 1.5SD)</h3>
                 <div class="table-container">
                     <table>
                         <thead>

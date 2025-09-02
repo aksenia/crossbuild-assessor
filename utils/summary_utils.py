@@ -476,7 +476,7 @@ class SummaryDataCalculator:
             dataset_sd = dataset_variance ** 0.5
             
             # Flag genes >= mean + 2*SD (based on rate)
-            outlier_threshold = dataset_mean + (2 * dataset_sd)
+            outlier_threshold = dataset_mean + (1.5 * dataset_sd)
             
             flagged_genes = []
             for gene, stats in gene_stats.items():
@@ -487,18 +487,25 @@ class SummaryDataCalculator:
                             'gene': gene,
                             'total_technical_issues': stats['total_technical_issues'],
                             'total_variants': stats['variant_count'],
-                            'technical_issue_rate': round(gene_avg, 1)
+                            'technical_issue_rate': round(gene_avg, 2)  # Two decimal places
                         })
             
-            # Sort by rate descending
-            flagged_genes.sort(key=lambda x: x['technical_issue_rate'], reverse=True)
+            # Sort by variant count descending, then by rate descending
+            flagged_genes.sort(key=lambda x: (x['total_variants'], x['technical_issue_rate']), reverse=True)
+            
+            # Create more concise representation for JSON
+            flagged_genes_compact = [
+                f"{gene['gene']}({gene['total_variants']}v,{gene['technical_issue_rate']}r)"
+                for gene in flagged_genes
+            ]
             
             gene_technical_analysis = {
-                'dataset_mean_technical_rate': round(dataset_mean, 1),
-                'dataset_sd_technical_rate': round(dataset_sd, 1),
-                'outlier_threshold': round(outlier_threshold, 1),
+                'dataset_mean_technical_rate': round(dataset_mean, 2),  # Two decimal places
+                'dataset_sd_technical_rate': round(dataset_sd, 2),     # Two decimal places
+                'outlier_threshold': round(outlier_threshold, 2),      # Two decimal places
                 'total_genes_analyzed': len(gene_stats),
-                'flagged_genes_above_average': flagged_genes[:10],
+                'flagged_genes_above_average': flagged_genes,          # Full details for HTML
+                'flagged_genes_compact': flagged_genes_compact,        # Compact for JSON
                 'flagged_genes_count': len(flagged_genes)
             }
         
