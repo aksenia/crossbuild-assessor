@@ -53,10 +53,10 @@ docker run -v /path/to/data:/data crossbuild-assessor \
 
 ## Priority categories
 
-- **CRITICAL**: Clinical interpretation changes (PATHOGENIC↔BENIGN, VUS→PATHOGENIC) 
-- **HIGH**: Impact transitions, same transcript consequence changes
-- **MODERATE**: Pathogenicity prediction changes (SIFT/PolyPhen)
-- **LOW**: Technical issues, annotation differences
+- **CRITICAL**: HGVS mismatches on priority transcript OR major clinical significance changes (Pathogenic↔Benign)
+- **MODERATE**: Priority transcript unavailable OR moderate clinical changes OR serious functional differences  
+- **LOW**: Minor changes (VUS-Benign, prediction changes, gene symbol differences)
+- **CONCORDANT**: Perfect priority transcript match with identical HGVS nomenclature
 
 ## Configuration
 
@@ -86,10 +86,10 @@ Create `config.json`:
 Clinical prioritization CSV:
 
 ```text
-Rank  Gene_hg19  Clinical_Significance_hg19  Clinical_Significance_hg38  Priority_Score  Priority_Category
-1     BRCA1      PATHOGENIC                   BENIGN                      40000          CRITICAL
-2     TP53       VUS                          PATHOGENIC                  30000          CRITICAL  
-3     APOE       HIGH impact                  MODERATE impact             12000          HIGH
+Priority  Location        Gene  Priority_Transcript_CrossBuild  HGVS_c_Concordance  Priority_Score  Priority_Category
+CRITICAL  12:81064145     PTPRQ  NM_001145026.2                 Mismatch           320            CRITICAL
+CRITICAL  15:48795983     FBN1   NM_000138.5                    Mismatch           110            CRITICAL  
+CONCORDANT 1:12345678     BRCA1  NM_007294.4                    Match              5              CONCORDANT
 ```
 
-HTML report provides unified dashboard with embedded visualizations and clinical analysis.
+HTML report provides unified dashboard with embedded visualizations and summaries.
